@@ -76,8 +76,10 @@ python -c "import numpy, pandas, sklearn, scipy, matplotlib, seaborn, tqdm; prin
 
 
 ## File structure
-celosia@fedora:~/Tom/VSCode/ML_Med/Parkins
-onProject$ tree -a -L 2 
+```bash
+tree -a -L 2
+```
+```text
 .
 ├── data
 │   ├── data
@@ -92,4 +94,4 @@ onProject$ tree -a -L 2
 ├── README.md
 ├── requirements.in
 └── requirements.lock.txt
-
+```
