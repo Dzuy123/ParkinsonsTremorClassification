@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+
+# Virtual environments
+ParkinsonVenv/
+venv/
+.venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Data files you usually should NOT push
+data/
+*.parquet
+*.feather
+*.pkl
+*.joblib
+*.h5
+*.hdf5
+
+# Kaggle / secrets
+kaggle.json
+.env
+
+# Outputs
+outputs/
+models/
+figures/
