@@ -73,3 +73,23 @@ jupyter lab
 ```bash
 python -c "import numpy, pandas, sklearn, scipy, matplotlib, seaborn, tqdm; print('OK')"
 ```
+
+
+## File structure
+celosia@fedora:~/Tom/VSCode/ML_Med/Parkins
+onProject$ tree -a -L 2 
+.
+├── data
+│   ├── data
+│   ├── .~lock.test.csv#
+│   ├── sample_submit.csv
+│   ├── test.csv
+│   └── train.csv
+├── .git
+├── .gitignore
+├── parkinson_eda.ipynb
+├── ParkinsonVenv
+├── README.md
+├── requirements.in
+└── requirements.lock.txt
+
