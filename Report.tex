@@ -647,13 +647,15 @@ For the first modeling baseline, the safest strategy is:
 \subsection{Data Quality}
 
 \begin{itemize}
-\item Zero missing values in metadata CSVs
+\item \textbf{Missing data identified:} Age == 0 and gender == 0 coded as missing/unknown; 163 samples with age 23 treated as separate subgroup (likely unknown code)
+\item Zero missing values in landmark coordinates (63 dimensions fully populated)
 \item 1,190 indexed files verified, 24 orphan files noted
 \item All 43 temporal artifacts corrected (non-increasing timestamps)
 \item 26 files with gaps extracted for longest continuous segment
 \item 21,861 junk frames (1.8\%) removed and verified
 \item Final dataset: clean, verified, ready for modeling
 \end{itemize}
+
 
 \subsection{Clinical Insights}
 
@@ -683,7 +685,7 @@ For the first modeling baseline, the safest strategy is:
 \item \textbf{Class imbalance:} Use class weights; minority class is 7.3\%
 \item \textbf{Sequence length:} Kinetic tremor shorter (290 vs. 400+ frames) $\Rightarrow$ RNNs/Transformers
 \item \textbf{Metadata:} Decide hybrid (metadata + motion) vs. motion-only approach
-\item \textbf{Normalization:} Frame rate varies (13--52 FPS) $\Rightarrow$ standardize to ~20 FPS
+\item \textbf{Normalization:} Frame rate varies (13--52 FPS) $\Rightarrow$ standardize to $\sim$20 FPS
 \item \textbf{Stratification:} Age-stratified train/test split (class and age dependent)
 \end{itemize}
 
