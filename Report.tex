@@ -171,7 +171,8 @@ Pronation/Supination & 65 & 61.6 ± 16.4 \\
 \includegraphics[width=0.48\columnwidth]{AgeByTargetClass.png}
 \caption{\small Age distribution (bimodal) and class-wise patterns.}
 \end{figure}
-Some entries contain age values equal to 0 together with gender coded as 0. These values likely represent missing demographic metadata rather than valid participant information. Consequently, these entries may introduce artifacts in the age distribution and should be interpreted cautiously.
+Some entries contain age values equal to 0 together with gender coded as 0. We treat age == 0 as missing/unknown metadata for preprocessing.
+We have to mention the unusually large subgroup of age 23 with 163 samples as well.
 \subsection{Physician Severity}
 
 \begin{table}[H]
@@ -198,7 +199,17 @@ Some entries contain age values equal to 0 together with gender coded as 0. Thes
 \includegraphics[width=0.95\columnwidth]{Doctor_diagnosis_0_5_distribution.png}
 \caption{\small Severity concentrated 0--3 (94.8\%). Predictive variable.}
 \end{figure}
+Table~6 and Figure~4 present the distribution of physician-assigned severity scores on a 0--5 scale. This is one of the most important finding in our EDA.
+The diagnosis score distribution changes a lot by exercise class. For example:
 
+\begin{itemize}
+\item \textbf{Kinetic tremor has many score 0 cases}
+\item \textbf{Pronation and supination of the hand has relatively more severe scores, including many score 4 cases}
+\item \textbf{Finger tapping and Fist are concentrated more in 2–3}
+
+\end{itemize}
+
+Therefore doctor-diagnos-is-0-5 may be predictive of the target.
 \section{Recording Temporal Characteristics}
 
 \subsection{Duration and Frame Count}
@@ -227,7 +238,7 @@ Frame Rate (FPS) & 20.5 ± 7.3 & 3.4--54.8 \\
 \includegraphics[width=0.48\columnwidth]{RecordingDuration.png}
 \caption{\small Frames and duration distributions (tight clustering around protocol standards).}
 \end{figure}
-
+Table~7 and Figure~5 show that recordings are generally consistent in length, with about 400 frames and an average duration of roughly 20 seconds. The frame rate averages 20.5 FPS with moderate variation. Notably, kinetic tremor recordings tend to be shorter, with a median of about 290 frames compared to approximately 397–404 frames for other tasks.
 \subsection{Class Differences}
 
 \begin{table}[H]
@@ -261,7 +272,12 @@ Pronation/Supin. & 359 & 19.8s & 18 \\
 \includegraphics[width=0.48\columnwidth]{FPSByClass.png}
 \caption{\small FPS bimodal distribution; kinetic tremor lower frame rate.}
 \end{figure}
-
+\paragraph{Imbalance Analysis}
+\begin{itemize}
+    \item \textbf{Imbalance ratio:} 3.52:1 (majority to minority class).
+    \item \textbf{Minority class:} \textit{Pronation and supination of the hand}, representing only 7.32\% of the samples.
+    \item \textbf{Implications:} Due to the class imbalance, accuracy alone can be misleading. More appropriate evaluation metrics include \textit{macro F1-score} and \textit{balanced accuracy}.
+\end{itemize}
 \section{Hand Skeleton and Temporal Patterns}
 
 \subsection{Geometric Structure}
@@ -317,7 +333,70 @@ Pronation/Supin. & 359 & 19.8s & 18 \\
 \includegraphics[width=0.95\columnwidth]{TSA_PronationAndSupinationOfTheHand.png}
 \caption{\small Rotation-centric; need quaternion/angle features.}
 \end{figure}
+\subsection{Evidence that Raw Recordings are Anatomically and Behaviorally Meaningful}
 
+The visual inspection of skeleton plots and derived distance plots indicates that the raw recordings capture meaningful anatomical and behavioral patterns. These visualizations provide strong qualitative evidence that the recorded hand movements correspond to the intended clinical exercises.
+
+\subsubsection{Postural Tremor}
+
+The derived distances remain comparatively stable over time.
+
+\begin{itemize}
+    \item The thumb--index fingertip distance remains nearly constant.
+    \item The mean fingertip--wrist distance is also relatively stable.
+\end{itemize}
+
+\textbf{Interpretation:} The hand is being held in a fixed posture, meaning the overall hand geometry is largely preserved. Although small oscillations may exist due to tremor, the dominant behavior is maintaining position.
+
+\subsubsection{Finger Tapping}
+
+This activity produces the clearest and most distinctive pattern.
+
+\begin{itemize}
+    \item Strong rhythmic oscillation in the thumb--index fingertip distance.
+    \item A repeated periodic pattern across time.
+\end{itemize}
+
+\textbf{Interpretation:} This behavior matches the expected clinical motion. Finger tapping should create repeated opening--closing movements between the thumb and index finger or nearby digits.
+
+\subsubsection{Fist}
+
+The signal also shows rhythmic behavior but with a different geometric structure.
+
+\begin{itemize}
+    \item Repetitive oscillations are present.
+    \item The overall hand-opening profile is lower than in postural tremor.
+    \item Opening and closing movements appear more global rather than limited to the thumb--index pair.
+\end{itemize}
+
+\textbf{Interpretation:} Fist-related movements affect multiple fingertip--to--wrist distances simultaneously, reflecting a global closing and opening of the hand rather than a localized finger interaction.
+
+\subsubsection{Pronation and Supination of the Hand}
+
+The pattern remains periodic, but the derived distances are less distinctive compared to finger tapping.
+
+\textbf{Interpretation:} This observation is expected. Pronation and supination are primarily rotational or orientation-based movements of the hand rather than pure opening--closing actions. As a result, distance-based features alone may fail to capture much of the discriminative signal for this task.
+
+\subsubsection{Kinetic Tremor}
+
+The movement pattern appears more irregular and less clearly periodic.
+
+\textbf{Interpretation:} Kinetic tremor occurs during voluntary motion, meaning the recorded signal is a mixture of intentional movement and tremor-related oscillations.
+
+\subsection{Implications for Modeling}
+
+These observations suggest that the dataset contains meaningful biomechanical signals. However, they also indicate that a future machine learning model should not rely solely on simple statistical properties of raw coordinates.
+
+Instead, feature engineering should incorporate biomechanically relevant representations:
+
+\begin{itemize}
+    \item Distance-based features for opening and closing hand movements.
+    \item Orientation or rotational features for pronation and supination.
+    \item Rhythmic or periodicity-related features for finger tapping.
+    \item Variability and irregularity measures for tremor-related motion.
+\end{itemize}
+
+Incorporating domain-aware features aligned with the biomechanics of each exercise can substantially improve the robustness and clinical relevance of the resulting model.
 \section{Data Cleaning and Quality}
 
 \begin{table}[H]
@@ -329,7 +408,7 @@ Pronation/Supin. & 359 & 19.8s & 18 \\
 \textbf{Issue} & \textbf{Count} & \textbf{Action} \\
 \midrule
 Non-increasing timestamps & 43 & Cumulative offset \\
-Massive gaps (>0.5s) & 26 & Extract longest segment \\
+Massive gaps (over 0.5s) & 26 & Extract longest segment \\
 Junk frames removed & 21,861 & Verified 0 duplicates \\
 \bottomrule
 \end{tabular}
@@ -370,6 +449,199 @@ Random Forest & 27.1\% & 23.4\% \\
 \caption{\small 5-Fold CV. Metadata alone insufficient; motion data essential.}
 \end{table}
 
+\subsection{Metadata Baseline Results}
+
+The metadata-only baseline models produced the following performance:
+
+\begin{itemize}
+    \item Dummy classifier: accuracy = 0.258, macro-F1 = 0.082
+    \item Logistic regression: accuracy = 0.324, macro-F1 = 0.261
+    \item Random forest: accuracy = 0.271, macro-F1 = 0.234
+\end{itemize}
+
+These results suggest that metadata alone contains some predictive signal but is insufficient for reliable classification.
+
+\begin{itemize}
+    \item All models outperform the dummy classifier.
+    \item Logistic regression achieves the best macro-F1 score.
+\end{itemize}
+
+This indicates that metadata is not trivial, but it is not sufficient by itself for accurate exercise classification.
+
+\subsection{Clinical Metadata as an Auxiliary Predictor}
+
+The variable \texttt{doctor\_diagnosis\_0\_5} represents a physician-assigned severity score describing the level of Parkinson’s motor symptoms. The score ranges from 0 to approximately 4 or 5, where larger values correspond to more severe symptoms.
+
+Exploratory analysis suggests that this variable is not uniformly distributed across exercise classes. For example:
+
+\begin{itemize}
+    \item Kinetic tremor recordings frequently correspond to lower severity scores.
+    \item Pronation and supination of the hand tend to appear with higher severity scores.
+    \item Finger tapping and fist movements are often associated with intermediate scores.
+\end{itemize}
+
+This means the variable acts as an \textbf{auxiliary predictor}. It is not the primary signal of interest, but it still provides information useful for predicting the exercise class.
+
+\paragraph{Confounding Effect}
+
+A confounder is a variable that is associated with both the input data and the target variable.
+
+Since the physician diagnosis score is unevenly distributed across exercise classes, it is correlated with the target label. Therefore, it carries predictive information even though it is not directly part of the recorded exercise data.
+
+Clinical metadata, particularly physician-rated motor severity, therefore provides non-negligible predictive information and should be treated as an auxiliary signal rather than ignored.
+
+\subsection{Schema Consistency and Time Variable Issues}
+
+The structural schema of the dataset is consistent across all files. Only a single schema structure was observed, which is a positive indicator of dataset quality.
+
+However, an issue was detected with the \texttt{TIME} variable.
+
+\begin{itemize}
+    \item 43 files contain non-increasing timestamps.
+\end{itemize}
+
+\subsubsection{Interpretation}
+
+This does not necessarily indicate that the recordings are invalid. Possible explanations include:
+
+\begin{itemize}
+    \item duplicated timestamps,
+    \item slightly out-of-order frames,
+    \item preprocessing artifacts introduced during data collection.
+\end{itemize}
+
+\subsubsection{Why This Matters}
+
+\begin{itemize}
+    \item Immediate implication: any feature relying directly on 
+    $\Delta t = TIME_{i+1} - TIME_i$ may become unstable or invalid.
+    
+    \item Deeper implication: computations relying on raw time differences may produce noisy or numerically unstable results.
+\end{itemize}
+
+For the initial modeling baseline, it is therefore safer to:
+
+\begin{itemize}
+    \item compute differences based on frame order rather than time-normalized derivatives,
+    \item store \texttt{duration} and \texttt{fps\_est} as file-level metadata features,
+    \item inspect the 43 problematic files before introducing more advanced time-based features.
+\end{itemize}
+
+\subsection{Sequence Length Differences Between Classes}
+
+Exploratory analysis revealed that recording length and duration vary across exercise classes.
+
+The approximate pattern is:
+
+\begin{itemize}
+    \item Kinetic tremor recordings: around 300 rows on average, shorter duration.
+    \item Other exercises (Postural tremor, Fist, Finger tapping, Pronation/Supination): approximately 408--440 rows, longer duration.
+\end{itemize}
+
+\subsubsection{Interpretation}
+
+This suggests that the recording protocol itself may encode information about the exercise class.
+
+\subsubsection{Why This Matters}
+
+\begin{itemize}
+    \item Immediate implication: a classifier may partially predict the class using only recording length or duration.
+    
+    \item Deeper implication: this is a common issue in medical machine learning where models may learn characteristics of the data collection protocol rather than only the underlying signal.
+\end{itemize}
+
+Although differences in exercise duration may reflect real clinical procedures, this effect should be explicitly quantified.
+
+A useful diagnostic step is therefore a \textbf{length-only baseline}. If the variables \texttt{n\_rows}, \texttt{duration}, and \texttt{fps\_est} alone predict the class reasonably well, then protocol-related cues are a substantial contributor to model performance.
+\section{Bad Time Table Analysis}
+
+To evaluate the reliability of the \texttt{TIME} column, we analyzed the differences between consecutive timestamps.
+
+The following statistics were computed for each file:
+
+\begin{itemize}
+\item \textbf{n\_non\_increasing}: number of times $\Delta t \le 0$
+\item \textbf{n\_zero\_dt}: number of exact duplicate timestamps
+\item \textbf{n\_negative\_dt}: number of true reversals where time moves backward
+\item \textbf{min\_dt}: most negative time jump
+\item \textbf{max\_dt}: largest positive jump
+\end{itemize}
+\paragraph{Example File}
+
+\texttt{raw\_data\_035dfb31-6fd9-11ed-a0e0\\-e82aea2c97f4.csv}
+
+\begin{itemize}
+\item n\_non\_increasing = 1
+\item n\_zero\_dt = 0
+\item n\_negative\_dt = 1
+\item min\_dt = -7.021082
+\end{itemize}
+
+This indicates that:
+
+\begin{itemize}
+\item there was exactly one reverse time jump,
+\item the jump was large,
+\item this behavior matches the visual pattern observed in the plots.
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\linewidth]{time_diffirent.png}
+\caption{Differences between consecutive timestamps ($\Delta t$). A large negative spike indicates a timestamp reset.}
+\label{fig:time_diff}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\linewidth]{time_trajectory.png}
+\caption{Trajectory of the \texttt{TIME} variable across frame index. The sudden drop confirms a timestamp discontinuity.}
+\label{fig:time_traj}
+\end{figure}
+Timestamp diagnostics for \texttt{raw\_data\_035dfb31-6fd9-11ed-a0e0-e82aea2c97f4.csv\\ Left: differences between consecutive timestamps ($\Delta t$), where a large negative spike indicates a time reset.\\ 
+Right: the TIME trajectory showing a sudden drop confirming the timestamp discontinuity.}
+\label{fig:time_issue}
+\end{figure}
+
+\paragraph{Additional Problematic Files}
+
+Some recordings contain multiple timestamp resets. Examples include:
+
+\begin{itemize}
+\item \texttt{raw\_data\_beb3794f-...}: 5 negative jumps
+\item \texttt{raw\_data\_8efb0e0b-...}: 3 negative jumps
+\item \texttt{raw\_data\_db5efc27-...}: 2 negative jumps with a large \texttt{min\_dt}
+\end{itemize}
+
+This indicates that several recordings contain more than one time discontinuity.
+
+\subsubsection{Practical Implications}
+
+\textbf{First layer.}  
+The \texttt{TIME} column should not be treated as a perfectly reliable physical clock in every file.
+
+If features are computed directly using $\Delta t$, such as:
+
+\begin{itemize}
+\item velocity: $v = \frac{dx}{dt}$
+\item acceleration: $\frac{d^2x}{dt^2}$
+\item frequency estimation from irregular timestamps
+\end{itemize}
+
+then negative or zero $\Delta t$ values may produce unstable or invalid results.
+
+\textbf{Second layer.}  
+The movement sequence itself is still usable because the row order preserves the progression of the motion. The landmark coordinates remain coherent; the issue primarily affects the timestamp variable.
+
+For the first modeling baseline, the safest strategy is:
+
+\begin{itemize}
+\item rely on frame order rather than timestamp differences,
+\item use \texttt{TIME} only for coarse file-level features such as total duration and estimated FPS,
+\item avoid fragile time-normalized derivatives in the initial feature set.
+\end{itemize}
 \section{Key Findings and Recommendations}
 
 \subsection{Data Quality}
