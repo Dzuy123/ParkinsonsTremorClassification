@@ -1,0 +1,418 @@
+\documentclass[11pt,twocolumn]{article}
+\usepackage[margin=0.5in]{geometry}
+\usepackage{graphicx}
+\graphicspath{{/home/claude/images/}}
+\DeclareGraphicsExtensions{.png,.jpeg,.png,.pdf}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{array}
+\usepackage{multirow}
+
+\captionsetup{font=small,skip=3pt}
+\setlength{\parskip}{2pt}
+\setlength{\parindent}{0pt}
+
+\pagestyle{empty}
+
+\title{\textbf{Parkinson's Disease Motor Task Classification}}
+\author{}
+\date{}
+
+\begin{document}
+
+
+\maketitle
+\begin{center}
+\textbf{\Large Part A: Exploratory Data Analysis}
+\end{center}
+
+
+\section{Executive Summary}
+
+This exploratory data analysis examines a comprehensive motor task dataset from Parkinson's disease patients. The dataset consists of \textbf{833 training samples} and \textbf{357 test samples} capturing hand movements across \textbf{5 distinct motor task classes}. Each recording contains \textbf{21 hand landmarks} tracked in 3D space (x, y, z coordinates) at variable frame rates between 18--25 frames per second. The raw dataset comprises \textbf{1,214 motion capture files} with varying recording durations and temporal characteristics.
+
+\begin{table}[H]
+\small
+\centering
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lr}
+\toprule
+\textbf{Metric} & \textbf{Value} \\
+\midrule
+Training samples & 833 \\
+Test samples & 357 \\
+Motor classes & 5 \\
+Landmarks & 21 \\
+Total raw files & 1,214 \\
+Missing data & 0 \\
+Junk frames removed & 21,861 (1.8\%) \\
+\bottomrule
+\end{tabular}
+\caption{\small Dataset Overview}
+\end{table}
+
+\section{Clinical Metadata Analysis}
+
+\subsection{Target Class Distribution}
+
+\begin{table}[H]
+\small
+\centering
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lrr}
+\toprule
+\textbf{Motor Task} & \textbf{Count} & \textbf{\%} \\
+\midrule
+Postural tremor & 215 & 25.8\% \\
+Fist & 199 & 23.9\% \\
+Finger tapping & 196 & 23.5\% \\
+Kinetic tremor & 162 & 19.5\% \\
+Pronation/Supination & 61 & 7.3\% \\
+\midrule
+Total & 833 & 100.0\% \\
+\bottomrule
+\end{tabular}
+\caption{\small Target Class Distribution}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\columnwidth]{TargetClassDistribution.png}
+\caption{\small Moderate imbalance: 3.5$\times$ spread (25.8\% to 7.3\%). Use macro-F1 and confusion matrix for evaluation.}
+\end{figure}
+
+The prediction target in the dataset is moderately imbalanced. The class distribution is shown in Table~\ref{tab:class_distribution}.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|c|}
+\hline
+\textbf{Class} & \textbf{Number of Samples} \\
+\hline
+Postural tremor & 215 \\
+Fist & 199 \\
+Finger tapping & 196 \\
+Kinetic tremor & 162 \\
+Pronation and supination of the hand & 61 \\
+\hline
+\end{tabular}
+\caption{Distribution of samples across the target classes}
+\label{tab:class_distribution}
+\end{table}
+
+The minority class, \textit{Pronation and supination of the hand}, represents only $7.32\%$ of the dataset. In imbalanced multiclass medical classification tasks, relying solely on overall accuracy can be misleading, as models may perform well on majority classes while failing on minority ones.
+
+Therefore, additional evaluation metrics are used:
+
+\begin{itemize}
+\item \textbf{Macro F1-score}
+\item \textbf{Balanced accuracy}
+\item \textbf{Confusion matrix}
+\item \textbf{Per-class recall}
+\end{itemize}
+
+
+
+\subsection{Demographics}
+
+\begin{table}[H]
+\small
+\centering
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lrr}
+\toprule
+\textbf{Variable} & \textbf{Count} & \textbf{\%} \\
+\midrule
+\multicolumn{3}{l}{\textit{Gender}} \\
+Male & 465 & 55.8\% \\
+Female & 365 & 43.8\% \\
+\multicolumn{3}{l}{\textit{Medication Status}} \\
+Off & 476 & 57.1\% \\
+On & 357 & 42.9\% \\
+\bottomrule
+\end{tabular}
+\caption{\small Demographics}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.48\columnwidth]{GenderDistribution.png}
+\includegraphics[width=0.48\columnwidth]{Patient_off_on_Distribution.png}
+\caption{\small Gender (balanced) and medication status distributions.}
+\end{figure}
+The demographic summary in Table~4 and Figure~2 shows that the dataset is relatively balanced in terms of gender distribution, with a slightly higher number of male participants. Similarly, the medication status distribution indicates a moderate difference between patients in the \textit{Off} and \textit{On} medication states, but both groups remain sufficiently represented for analysis.
+\subsection{Age Analysis}
+
+\textbf{Age Statistics:} Mean 56.65 ± 19.86y, Median 65y, Range 0--84y. Bimodal at 23y (unknown codes) and 60--70y (main cohort).
+
+\begin{table}[H]
+\small
+\centering
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lrr}
+\toprule
+\textbf{Motor Task} & \textbf{Median (y)} & \textbf{Mean ± Std (y)} \\
+\midrule
+Finger tapping & 41 & 48.8 ± 20.5 \\
+Kinetic tremor & 65 & 61.6 ± 18.3 \\
+Postural tremor & 68 & 63.8 ± 17.8 \\
+Fist & 68 & 62.4 ± 18.0 \\
+Pronation/Supination & 65 & 61.6 ± 16.4 \\
+\bottomrule
+\end{tabular}
+\caption{\small Age by Class: Finger tapping younger (41y median).}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.48\columnwidth]{AgeDistribution.png}
+\includegraphics[width=0.48\columnwidth]{AgeByTargetClass.png}
+\caption{\small Age distribution (bimodal) and class-wise patterns.}
+\end{figure}
+Some entries contain age values equal to 0 together with gender coded as 0. These values likely represent missing demographic metadata rather than valid participant information. Consequently, these entries may introduce artifacts in the age distribution and should be interpreted cautiously.
+\subsection{Physician Severity}
+
+\begin{table}[H]
+\small
+\centering
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lrr}
+\toprule
+\textbf{Score} & \textbf{Count} & \textbf{\%} \\
+\midrule
+0 (no symptoms) & 196 & 23.5\% \\
+1 (mild) & 198 & 23.8\% \\
+2 (mild-moderate) & 212 & 25.5\% \\
+3 (moderate) & 175 & 21.0\% \\
+4 (severe) & 43 & 5.2\% \\
+5 (most severe) & 9 & 1.1\% \\
+\bottomrule
+\end{tabular}
+\caption{\small Physician Severity (0--5 scale).}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\columnwidth]{Doctor_diagnosis_0_5_distribution.png}
+\caption{\small Severity concentrated 0--3 (94.8\%). Predictive variable.}
+\end{figure}
+
+\section{Recording Temporal Characteristics}
+
+\subsection{Duration and Frame Count}
+
+\begin{table}[H]
+\small
+\centering
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lrr}
+\toprule
+\textbf{Metric} & \textbf{Mean ± Std} & \textbf{Range} \\
+\midrule
+Frames (count) & 400.2 ± 149.6 & 107--988 \\
+Duration (sec) & 19.97 ± 2.51 & 2.4--27.1 \\
+Frame Rate (FPS) & 20.5 ± 7.3 & 3.4--54.8 \\
+\bottomrule
+\end{tabular}
+\caption{\small Recording Temporal Statistics.}
+\end{table}
+
+\textbf{Critical finding:} Kinetic tremor 1.4$\times$ shorter (median 290 frames vs. 397--404 for others).
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.48\columnwidth]{RecordingLength_n_rows_.png}
+\includegraphics[width=0.48\columnwidth]{RecordingDuration.png}
+\caption{\small Frames and duration distributions (tight clustering around protocol standards).}
+\end{figure}
+
+\subsection{Class Differences}
+
+\begin{table}[H]
+\small
+\centering
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lrrr}
+\toprule
+\textbf{Class} & \textbf{Frames (med)} & \textbf{Dur (med)} & \textbf{FPS (med)} \\
+\midrule
+Kinetic tremor & 290 & 17.5s & 13 \\
+Postural tremor & 404 & 20.2s & 20 \\
+Fist & 398 & 20.0s & 20 \\
+Finger tapping & 397 & 20.0s & 19 \\
+Pronation/Supin. & 359 & 19.8s & 18 \\
+\bottomrule
+\end{tabular}
+\caption{\small Kinetic tremor systematically shorter.}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.48\columnwidth]{RecordingLengthByClass.png}
+\includegraphics[width=0.48\columnwidth]{DurationByClass.png}
+\caption{\small Recording length and duration by class.}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.48\columnwidth]{EstimateFPS.png}
+\includegraphics[width=0.48\columnwidth]{FPSByClass.png}
+\caption{\small FPS bimodal distribution; kinetic tremor lower frame rate.}
+\end{figure}
+
+\section{Hand Skeleton and Temporal Patterns}
+
+\subsection{Geometric Structure}
+
+21 landmarks: WRIST + THUMB (4) + FOUR FINGERS (4 each) = 63 coordinate dimensions (x,y,z per landmark).
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\columnwidth]{Hand_Skeleton_Pose_Representation_for_Each_Motor_Task.png}
+\caption{\small Hand skeleton snapshots: distinct postures per motor task.}
+\end{figure}
+
+\subsection{Distance-Based Time Series Analysis}
+
+3D Euclidean distances between key landmarks reveal clinical signatures:
+
+\textbf{Postural Tremor:} Stable distances, fixed posture.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\columnwidth]{TSA_PosturalTremor.png}
+\caption{\small Flat, stable distance signature. No large kinematic change.}
+\end{figure}
+
+\textbf{Finger Tapping:} Clean 2--3 Hz periodic oscillations.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\columnwidth]{TSA_FingerTapping.png}
+\caption{\small Most periodic signal. Clear contact cycles.}
+\end{figure}
+
+\textbf{Fist:} Global closure oscillations.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\columnwidth]{TSA_Fist.png}
+\caption{\small Repetitive global closure, less regular than tapping.}
+\end{figure}
+
+\textbf{Kinetic Tremor:} Irregular aperiodic pattern.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\columnwidth]{TSA_KineticTremor.png}
+\caption{\small Complex signal from overlaid voluntary + tremor motion.}
+\end{figure}
+
+\textbf{Pronation/Supination:} Moderate oscillation, weak distance signature.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\columnwidth]{TSA_PronationAndSupinationOfTheHand.png}
+\caption{\small Rotation-centric; need quaternion/angle features.}
+\end{figure}
+
+\section{Data Cleaning and Quality}
+
+\begin{table}[H]
+\small
+\centering
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lrr}
+\toprule
+\textbf{Issue} & \textbf{Count} & \textbf{Action} \\
+\midrule
+Non-increasing timestamps & 43 & Cumulative offset \\
+Massive gaps (>0.5s) & 26 & Extract longest segment \\
+Junk frames removed & 21,861 & Verified 0 duplicates \\
+\bottomrule
+\end{tabular}
+\caption{\small Data Quality Issues Fixed.}
+\end{table}
+
+Longest recording (988 frames) segmented into three regions: intense activity (0--20s), static plateau (25--50s), resumed motion (50--85s). Continuous segment extraction retained 251 frames.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\columnwidth]{TSA_movementOverTimeForTheLongestFile_988Frames_.png}
+\caption{\small Longest raw recording showing temporal segmentation and dead air.}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\columnwidth]{TSA_contMovement.png}
+\caption{\small Cleaned continuous segment: 988 frames to 251 frames (junk removed).}
+\end{figure}
+
+\section{Metadata-Only Baseline Classification}
+
+Classification performance using only demographic/clinical features (no motion):
+
+\begin{table}[H]
+\small
+\centering
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lrr}
+\toprule
+\textbf{Model} & \textbf{Accuracy} & \textbf{Macro-F1} \\
+\midrule
+Dummy (most frequent) & 25.8\% & 8.2\% \\
+Logistic Regression & 32.4\% & 26.1\% \\
+Random Forest & 27.1\% & 23.4\% \\
+\bottomrule
+\end{tabular}
+\caption{\small 5-Fold CV. Metadata alone insufficient; motion data essential.}
+\end{table}
+
+\section{Key Findings and Recommendations}
+
+\subsection{Data Quality}
+
+\begin{itemize}
+\item Zero missing values in metadata CSVs
+\item 1,190 indexed files verified, 24 orphan files noted
+\item All 43 temporal artifacts corrected (non-increasing timestamps)
+\item 26 files with gaps extracted for longest continuous segment
+\item 21,861 junk frames (1.8\%) removed and verified
+\item Final dataset: clean, verified, ready for modeling
+\end{itemize}
+
+\subsection{Clinical Insights}
+
+\begin{itemize}
+\item Each motor task exhibits distinct biomechanical signature
+\item Postural tremor: stable posture maintenance
+\item Finger tapping: periodic thumb-finger contact at 2--3 Hz
+\item Fist: global multi-joint closure
+\item Kinetic tremor: irregular voluntary plus pathological motion
+\item Pronation/Supination: rotation-driven (requires orientation features)
+\end{itemize}
+
+\subsection{Feature Engineering}
+
+\begin{itemize}
+\item Distance-based metrics (proven clinically relevant)
+\item Orientation features: quaternions, Euler angles for rotation tasks
+\item Spectral features: FFT for periodic classes (tapping, fist, postural)
+\item Tremor metrics: frequency, amplitude, oscillation regularity
+\item Temporal statistics: mean, std, min, max, range of distances/angles
+\end{itemize}
+
+\subsection{Modeling Strategy}
+
+\begin{itemize}
+\item \textbf{Evaluation metrics:} Macro-F1, balanced accuracy, per-class recall
+\item \textbf{Class imbalance:} Use class weights; minority class is 7.3\%
+\item \textbf{Sequence length:} Kinetic tremor shorter (290 vs. 400+ frames) $\Rightarrow$ RNNs/Transformers
+\item \textbf{Metadata:} Decide hybrid (metadata + motion) vs. motion-only approach
+\item \textbf{Normalization:} Frame rate varies (13--52 FPS) $\Rightarrow$ standardize to ~20 FPS
+\item \textbf{Stratification:} Age-stratified train/test split (class and age dependent)
+\end{itemize}
+
+\end{document}
