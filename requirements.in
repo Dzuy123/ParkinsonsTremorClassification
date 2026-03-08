@@ -8,3 +8,4 @@ jupyterlab
 ipykernel
 tqdm
 openpyxl
+catboost
