@@ -1,14 +1,21 @@
 \documentclass[11pt,twocolumn]{article}
 \usepackage[margin=0.5in]{geometry}
+
+a
 \usepackage{graphicx}
-\graphicspath{{/home/claude/images/}}
-\DeclareGraphicsExtensions{.png,.jpeg,.png,.pdf}
 \usepackage{float}
 \usepackage{caption}
 \usepackage{booktabs}
-\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{amssymb}
 \usepackage{array}
 \usepackage{multirow}
+\usepackage{hyperref}
+\usepackage{microtype}
+\usepackage{enumitem}
+\usepackage{parskip}
+\usepackage{xcolor}
+ 
 
 \captionsetup{font=small,skip=3pt}
 \setlength{\parskip}{2pt}
@@ -276,7 +283,6 @@ Pronation/Supin. & 359 & 19.8s & 18 \\
 \begin{itemize}
     \item \textbf{Imbalance ratio:} 3.52:1 (majority to minority class).
     \item \textbf{Minority class:} \textit{Pronation and supination of the hand}, representing only 7.32\% of the samples.
-    \item \textbf{Implications:} Due to the class imbalance, accuracy alone can be misleading. More appropriate evaluation metrics include \textit{macro F1-score} and \textit{balanced accuracy}.
 \end{itemize}
 \section{Hand Skeleton and Temporal Patterns}
 
@@ -617,7 +623,7 @@ Some recordings contain multiple timestamp resets. Examples include:
 
 This indicates that several recordings contain more than one time discontinuity.
 
-\subsubsection{Practical Implications}
+\subsection{Practical Implications}
 
 \textbf{First layer.}  
 The \texttt{TIME} column should not be treated as a perfectly reliable physical clock in every file.
@@ -647,7 +653,7 @@ For the first modeling baseline, the safest strategy is:
 \subsection{Data Quality}
 
 \begin{itemize}
-\item \textbf{Missing data identified:} Age == 0 and gender == 0 coded as missing/unknown; 163 samples with age 23 treated as separate subgroup (likely unknown code)
+\item \textbf{Missing data identified:} Age = 0 and gender = 0 coded as missing/unknown; 163 samples with age 23 treated as separate subgroup (likely unknown code)
 \item Zero missing values in landmark coordinates (63 dimensions fully populated)
 \item 1,190 indexed files verified, 24 orphan files noted
 \item All 43 temporal artifacts corrected (non-increasing timestamps)
@@ -688,5 +694,315 @@ For the first modeling baseline, the safest strategy is:
 \item \textbf{Normalization:} Frame rate varies (13--52 FPS) $\Rightarrow$ standardize to $\sim$20 FPS
 \item \textbf{Stratification:} Age-stratified train/test split (class and age dependent)
 \end{itemize}
+\newpage
+\pagebreak
+\\
 
+
+{\Large\textbf{Part B: Model Evaluation}}
+
+\section{Overview}
+ 
+In this part, we evaluate a machine learning pipeline for classifying five hand-movement types recorded from Parkinson's disease patients: \textit{Finger tapping}, \textit{Fist}, \textit{Kinetic tremor}, \textit{Postural tremor}, and \textit{Pronation and supination of the hand}. Training set: 833 recordings; held-out test set: 357 recordings.
+ 
+Figure~\ref{fig:class_dist} shows the training-set class distribution. The minority class (Pronation/supination, $n=61$, 7.3\%) produces a 3.5:1 imbalance ratio, motivating balanced class weights and macro-averaged evaluation metrics throughout.
+ 
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{fig_class_dist.png}
+  \caption{Training set class distribution ($n=833$). Pronation/supination is the smallest class (3.5:1 imbalance ratio).}
+  \label{fig:class_dist}
+\end{figure}
+ 
+% ============================================================
+\section{Data Preprocessing}
+ 
+
+ 
+\textbf{Signal Segmentation}
+ 
+Before feature extraction, each recording was split into continuous clean sub-sequences by detecting two discontinuity types:
+ 
+\begin{enumerate}[leftmargin=*, topsep=1pt, itemsep=0pt]
+  \item \textbf{Timestamp resets}: frames where $\Delta t \leq 0$.
+  \item \textbf{Large gaps}: frames where $\Delta t > \max(0.5\,\text{s},\; 8\,\widetilde{\Delta t})$, with $\widetilde{\Delta t}$ the median positive inter-frame interval.
+\end{enumerate}
+ 
+Segments shorter than 20 frames were discarded, preventing idle or corrupted periods from contaminating downstream signal statistics.
+ 
+% ============================================================
+\section{Feature Engineering}
+ 
+\subsection{Coordinate Normalisation}
+ 
+All 21 landmark coordinates were made translation- and scale-invariant: \textit{wrist-centred} (subtract wrist position from every landmark) and \textit{palm-normalised} (divide by mean distance from wrist to index and pinky MCP joints).
+ 
+\subsection{Derived Signals}
+ 
+Six biomechanically motivated signal types were computed per segment:
+ 
+\begin{enumerate}[leftmargin=*, topsep=1pt, itemsep=0pt]
+  \item \textbf{Thumb--index distance}: Euclidean distance between thumb tip and index fingertip --- primary tapping signature.
+  \item \textbf{Fingertip--wrist distances}: distance of each of the five fingertips to the wrist.
+  \item \textbf{Fingertip spread}: mean distance between adjacent fingertip pairs.
+  \item \textbf{Palm normal and rotation speed}: cross-product of MCP vectors gives the palm surface normal; frame-to-frame angular change captures pronation/supination velocity.
+  \item \textbf{Tip motion energy}: mean per-frame displacement speed of the five fingertips.
+  \item \textbf{Whole-pose motion energy}: mean per-frame displacement across all 21 landmarks.
+\end{enumerate}
+ 
+\subsection{Statistical and Spectral Summaries}
+ 
+Each signal was summarised with 16 descriptors: mean, std, min, max, median, IQR, RMS, range, mean absolute difference, zero-crossing rate, dominant frequency, spectral entropy, and band-powers in four clinical bands (0--3\,Hz, 3--6\,Hz, 6--9\,Hz, 9--12\,Hz) estimated via Welch's method.
+ 
+\subsection{Cycle Features}
+ 
+After Savitzky--Golay smoothing, cycle-level features were extracted: peak count, mean/std/slope of cycle duration, mean/std/slope of cycle amplitude, and interruption count (cycles $>2\times$ the median duration). The final feature matrix has \textbf{237 numeric} and \textbf{2 categorical} columns per recording.
+ 
+\subsection{Aggregation}
+ 
+Multi-segment recordings were aggregated via length-weighted \texttt{nanmean}, giving longer segments proportionally more influence.
+ 
+% ============================================================
+\section{Model Selection and Cross-Validation}
+ 
+Four classifiers were benchmarked via 5-fold stratified cross-validation. All pipelines applied median imputation for numeric features and mode imputation plus one-hot encoding for categoricals; Logistic Regression additionally used \texttt{StandardScaler}.
+ 
+\begin{itemize}[leftmargin=*, topsep=1pt, itemsep=0pt]
+  \item \textbf{Logistic Regression}: L2, balanced class weights, \texttt{max\_iter=4000}
+  \item \textbf{Random Forest}: 700 trees, \texttt{min\_samples\_leaf=2}, balanced subsampling
+  \item \textbf{Extra Trees}: 900 trees, same configuration as RF
+  \item \textbf{CatBoost}: gradient boosting, native categorical handling, \texttt{depth=6}, \texttt{lr=0.05}, 800 iterations, balanced class weights
+\end{itemize}
+ 
+Figure~\ref{fig:model_compare} visualises all four metrics across all models; Table~\ref{tab:cv} gives exact values.
+ 
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{fig_model_comparison.png}
+  \caption{5-fold CV model comparison (mean $\pm$ std). CatBoost leads on all metrics. Logistic Regression is a close second with the lowest variance, suggesting the engineered features are largely linearly separable.}
+  \label{fig:model_compare}
+\end{figure}
+ 
+\begin{table}[H]
+\centering
+\caption{5-Fold CV Results (mean $\pm$ std)}
+\label{tab:cv}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Model} & \textbf{Acc.} & \textbf{Bal.\ Acc.} & \textbf{Mac.\ F1} & \textbf{Wtd.\ F1} \\
+\midrule
+CatBoost   & $.969_{\pm.014}$ & $.963_{\pm.015}$ & $.964_{\pm.014}$ & $.969_{\pm.014}$ \\
+LogReg     & $.966_{\pm.005}$ & $.962_{\pm.012}$ & $.961_{\pm.008}$ & $.966_{\pm.005}$ \\
+ExtraTrees & $.962_{\pm.015}$ & $.943_{\pm.019}$ & $.950_{\pm.019}$ & $.961_{\pm.015}$ \\
+RF         & $.951_{\pm.021}$ & $.925_{\pm.027}$ & $.935_{\pm.027}$ & $.950_{\pm.022}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+ 
+CatBoost was selected as the final model. LogReg's competitive performance indicates the feature set is highly discriminative even with a linear boundary. Random Forest shows the highest variance, suggesting sensitivity to bootstrap subsampling at this dataset size.
+ 
+% ============================================================
+\section{Confusion Matrix and Per-Class Performance}
+ 
+Figure~\ref{fig:cm} shows the normalised confusion matrix for CatBoost on out-of-fold (OOF) predictions. Figure~\ref{fig:per_class} plots per-class precision, recall, and F1. Exact values appear in Table~\ref{tab:per_class}.
+ 
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{fig_confusion_matrix.png}
+  \caption{Normalised OOF confusion matrix ($n=833$). Diagonal values are uniformly high. Off-diagonal mass concentrates almost entirely in the Pronation/supination row.}
+  \label{fig:cm}
+\end{figure}
+ 
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{fig_per_class_metrics.png}
+  \caption{Per-class precision, recall, and F1 for CatBoost (OOF). All five classes exceed F1 of 0.93. Kinetic tremor achieves perfect recall (1.000).}
+  \label{fig:per_class}
+\end{figure}
+ 
+\begin{table}[H]
+\centering
+\caption{CatBoost Per-Class Report (OOF, $n=833$)}
+\label{tab:per_class}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Class} & \textbf{Prec.} & \textbf{Rec.} & \textbf{F1} & \textbf{N} \\
+\midrule
+Finger tapping       & 0.959 & 0.949 & 0.954 & 196 \\
+Fist                 & 0.970 & 0.965 & 0.967 & 199 \\
+Kinetic tremor       & 0.953 & 1.000 & 0.976 & 162 \\
+Postural tremor      & 0.995 & 0.981 & 0.988 & 215 \\
+Pronation/supination & 0.949 & 0.918 & 0.933 &  61 \\
+\midrule
+Macro avg            & 0.965 & 0.963 & 0.964 & 833 \\
+Weighted avg         & 0.969 & 0.969 & 0.969 & 833 \\
+\bottomrule
+\end{tabular}
+\end{table}
+ 
+\textbf{Key observations.}
+Kinetic tremor achieves perfect recall (1.000): spectral and cycle features uniquely discriminate its irregular aperiodic signal, consistent with the EDA biomechanical analysis.
+Postural tremor reaches the highest precision (0.995), reflecting minimal false positives.
+Pronation/supination has the lowest F1 (0.933), driven by small support ($n=61$) and partial confusion with oscillatory tasks (Finger tapping, Fist) that share Euclidean distance profiles but differ in rotational orientation --- precisely the dimension distance-based features underweight.
+ 
+\subsection{Normalised Confusion Matrix}
+ 
+\begin{table}[H]
+\centering
+\caption{Normalised Confusion Matrix (row\,=\,true, col\,=\,predicted)}
+\label{tab:cm_detail}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lccccc}
+\toprule
+ & \textbf{FT} & \textbf{Fist} & \textbf{KT} & \textbf{PT} & \textbf{PS} \\
+\midrule
+Finger tap.\ (FT) & \textbf{.949} & .010 & .010 & .010 & .020 \\
+Fist              & .010 & \textbf{.965} & .000 & .000 & .025 \\
+Kinetic t.\ (KT)  & .000 & .000 & \textbf{1.00} & .000 & .000 \\
+Postural t.\ (PT) & .005 & .000 & .009 & \textbf{.981} & .005 \\
+Pronation\ (PS)   & .049 & .033 & .000 & .000 & \textbf{.918} \\
+\bottomrule
+\end{tabular}
+\end{table}
+ 
+No systematic confusion exists between the two tremor classes (KT, PT), confirming spectral band-power features successfully separate involuntary postural tremor from kinetic tremor.
+ 
+% ============================================================
+\section{Feature Importance}
+ 
+Figure~\ref{fig:feat_imp} shows the top-20 features by normalised importance from the full-data CatBoost fit, colour-coded by feature group.
+ 
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{fig_feature_importance.png}
+  \caption{Top-20 CatBoost feature importances (full-data fit, normalised). Spectral (purple) and cycle (green) features dominate. Palm orientation features (red) appear in the top-20, supporting their role in Pronation/supination.}
+  \label{fig:feat_imp}
+\end{figure}
+ 
+Spectral band-power and dominant frequency features rank highest, confirming periodic structure as the primary discriminative signal. Cycle duration and amplitude features separate rhythmic tasks (Finger tapping, Fist) from aperiodic kinetic tremor. Palm rotation speed features appear in the top-20, consistent with their design intent. The physician severity score \texttt{doctor\_diagnosis\_0\_5} also appears among important features, consistent with the EDA finding of systematic score differences across motor classes.
+ 
+% ============================================================
+\section{Statistical Analysis}
+ 
+\subsection{Point Estimates with 95\% Confidence Intervals}
+ 
+Table~\ref{tab:ci} reports 95\% Wilson score confidence intervals~\cite{wilson1927} for the primary metrics on the full OOF set ($n=833$). Wilson intervals are preferred over normal approximation intervals as they remain valid near the $[0,1]$ boundaries.
+ 
+\begin{table}[H]
+\centering
+\caption{CatBoost OOF Metrics with 95\% Wilson CIs}
+\label{tab:ci}
+\small
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Metric} & \textbf{Value} & \textbf{CI Low} & \textbf{CI High} \\
+\midrule
+Accuracy          & 0.9688 & 0.9543 & 0.9794 \\
+Balanced Accuracy & 0.9626 & 0.9474 & 0.9741 \\
+Macro F1          & 0.9637 & 0.9482 & 0.9754 \\
+
+\bottomrule
+\end{tabular}
+\end{table}
+ 
+All confidence intervals are tight, confirming stable OOF estimates. Cohen's $\kappa = 0.961$ places agreement firmly in the \textit{almost perfect} range ($\kappa > 0.80$)~\cite{landis1977}. The Matthews Correlation Coefficient (0.961) confirms robustness under class imbalance, as MCC accounts for all four cells of the confusion matrix simultaneously.
+ 
+\subsection{Error Distribution Test}
+ 
+A chi-square goodness-of-fit test examines whether CatBoost's 26 OOF errors are uniformly distributed across classes (null hypothesis: errors proportional to class size). Table~\ref{tab:errors} reports per-class counts and error rates.
+ 
+\begin{table}[H]
+\centering
+\caption{Per-Class Error Rates --- CatBoost OOF ($n=833$)}
+\label{tab:errors}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lccr}
+\toprule
+\textbf{Class} & \textbf{Errors} & \textbf{n} & \textbf{Rate} \\
+\midrule
+Finger tapping       & 10 & 196 & 5.1\% \\
+Fist                 &  7 & 199 & 3.5\% \\
+Kinetic tremor       &  0 & 162 & 0.0\% \\
+Postural tremor      &  4 & 215 & 1.9\% \\
+Pronation/supination &  5 &  61 & 8.2\% \\
+\midrule
+Total                & 26 & 833 & 3.1\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+ 
+The chi-square test is statistically significant ($p < 0.05$), confirming errors are \textit{not} uniformly distributed. Pronation/supination has an 8.2\% error rate --- $2.6\times$ the overall rate of 3.1\% --- while Kinetic tremor contributes zero errors. This heterogeneity justifies class-specific interventions, particularly orientation-based feature augmentation for Pronation/supination.
+ 
+% ============================================================
+\section{Test-Set Predictions}
+ 
+The final CatBoost model was fitted on the full training set and applied to the 357 test recordings. Figure~\ref{fig:test_dist} compares predicted class proportions against training-set ground-truth proportions.
+ 
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{fig_test_distribution.png}
+  \caption{Class proportions: training set (true labels) vs.\ test set (predicted). Distributions are closely aligned, with no systematic prediction collapse or class drift.}
+  \label{fig:test_dist}
+\end{figure}
+ 
+\begin{table}[H]
+\centering
+\caption{Test-Set Prediction Distribution ($n=357$)}
+\label{tab:test_dist}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Predicted Class} & \textbf{Count} & \textbf{\%} \\
+\midrule
+Finger tapping           & 95  & 26.6\% \\
+Postural tremor          & 89  & 24.9\% \\
+Fist                     & 77  & 21.6\% \\
+Kinetic tremor           & 69  & 19.3\% \\
+Pronation/supination     & 27  &  7.6\% \\
+\midrule
+Total                    & 357 & 100\%  \\
+\bottomrule
+\end{tabular}
+\end{table}
+ 
+Predicted proportions (e.g., Pronation/supination 7.6\%) closely mirror training-set proportions (7.3\%), with no collapse toward majority classes. Results saved to \texttt{data/submit\_motion\_model.csv}.
+ 
+% ============================================================
+\section{Discussion}
+ 
+The pipeline achieves strong performance (macro F1 0.964, $\kappa = 0.961$, MCC 0.961) with tight Wilson confidence intervals (accuracy $\in [0.954,\, 0.979]$ at 95\%). Several design decisions are validated by the results:
+ 
+\textbf{Robust segmentation} prevents the 43 timestamp-corrupted files identified in the EDA from distorting Welch-estimated band-power features, which would disproportionately affect tremor class separation.
+ 
+\textbf{Scale-invariant normalisation} eliminates inter-subject hand-size variability critical for a cohort spanning ages 23--84 years with diverse anatomical profiles.
+ 
+\textbf{Clinically motivated features} map directly to EDA biomechanical signatures: spectral features for periodic tasks, palm-rotation features for pronation/supination, and cycle-interruption features for kinetic tremor --- all confirmed post-hoc by the feature importance analysis.
+ 
+\textbf{Physician severity} (\texttt{doctor\_diagnosis\_0\_5}) ranks among the top features, consistent with the EDA finding of systematic score stratification across motor classes, validating the hybrid metadata-plus-motion design.
+ 
+\textbf{Limitations.} Pronation/supination error rate is $2.6\times$ the average. Distance-based features structurally underrepresent rotation --- the dominant signal for this task --- as flagged in the EDA. Future work should incorporate quaternion or Euler angle features and dedicated augmentation for this class. Hyperparameter tuning for CatBoost was not performed; Bayesian optimisation would likely close the remaining gap over Logistic Regression.
+ 
+% ============================================================
+\section{Conclusion}
+ 
+A biomechanically motivated feature engineering pipeline was designed, grounded in EDA findings, and benchmarked across four classifiers. CatBoost achieved the best performance: accuracy 96.9\%, balanced accuracy 96.3\%, macro F1 96.4\%, Cohen's $\kappa = 0.961$. Wilson confidence intervals confirm all estimates are precise and stable. Error analysis reveals Kinetic tremor is perfectly classified while Pronation/supination remains the primary challenge, directly guiding future feature engineering and augmentation priorities. Test-set predictions preserve the training-set class distribution, confirming generalisation without systematic bias.
+ 
+% ============================================================
+\begin{thebibliography}{9}
+\setlength{\itemsep}{0pt}
+\bibitem{wilson1927}
+  Wilson, E.B.\ (1927). Probable inference, the law of succession, and statistical inference. \textit{J.\ Amer.\ Statist.\ Assoc.}, 22(158), 209--212.
+\bibitem{landis1977}
+  Landis, J.R., Koch, G.G.\ (1977). The measurement of observer agreement for categorical data. \textit{Biometrics}, 33(1), 159--174.
+ 
+\end{thebibliography}
+ 
 \end{document}
