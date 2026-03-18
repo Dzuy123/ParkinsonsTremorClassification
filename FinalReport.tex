@@ -1,0 +1,822 @@
+\documentclass[10pt,twocolumn]{article}
+
+\usepackage[a4paper,margin=0.68in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{multicol}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{amsmath,amssymb}
+\usepackage{siunitx}
+\usepackage{float}
+\usepackage{dblfloatfix}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage{placeins}
+
+\graphicspath{{figures/}{./}}
+\setlength{\columnsep}{0.24in}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.35em}
+\captionsetup{font=small,labelfont=bf}
+\hypersetup{colorlinks=true,linkcolor=black,citecolor=black,urlcolor=blue}
+\sisetup{round-mode=places,round-precision=3}
+
+\begin{document}
+	
+	\pagenumbering{gobble}
+	\onecolumn
+	\begin{titlepage}
+		\begin{center}
+			
+			\vspace*{1cm}
+			\includegraphics[width=0.5\textwidth]{usth.png}\\[1cm]
+			{\huge \textbf{Parkinson's Tremor Classification}}\\[0.6cm]
+			{\Large Final Report}\\[0.6cm]
+			{\large DS3.006 -- Machine Learning in Medicine}\\[1.2cm]
+			
+			\vfill
+			
+			{\large \textbf{Group 6}}\\[0.8cm]
+			
+			{\large \textit{Members}}\\[0.5cm]
+			\begin{tabular}{ll}
+			Pham Dinh Duy & 22BI13124 \\			
+			Nguyen Le Minh & 22BI13294 \\			
+			Duong Minh Hieu & 22BI13160 \\
+			Nguyen Hoang Lan & 23BI14472 \\
+			Bui Duc Thang & 23BI14400\\
+			Le Quoc Anh & 23BI14022 \\
+			Vu Ngoc Vinh  & 23BI14456 \\
+			\end{tabular}
+			
+			\vspace{1cm}
+			
+			{\large \textit{Supervisor}}\\[0.3cm]
+			Prof.\ Tran Giang Son\\[1cm]
+			
+			{\large Department of ICT, University of Science and Technology of Hanoi}\\[0.3cm]
+			March 2026
+			
+		\end{center}
+	\end{titlepage}
+	
+	\clearpage
+	\pagenumbering{arabic}
+	\setcounter{page}{1}
+	\twocolumn
+
+\begin{abstract}
+We study a Parkinsonian hand-movement dataset from Kaggle that contains metadata and one raw landmark sequence for each recording. The target is the performed exercise: postural tremor, kinetic tremor, fist, finger tapping, or pronation and supination of the hand. Although the metadata tables have no blank cells, our exploratory analysis shows that the dataset is not fully clean. Some metadata values act like placeholders, the target is imbalanced, recording length differs by class, and 43 raw files have non-increasing timestamps.
+
+To handle these issues, we build a preprocessing pipeline guided by both biomechanics and data quality. Each sequence is split into continuous segments when time reverses or jumps too much. Landmarks are centered at the wrist and normalized by palm size. We then extract features from hand distances, finger spread, palm orientation, motion energy, spectral summaries, and cycle patterns. Metadata are added as auxiliary variables because they carry useful clinical context but are not sufficient on their own.
+
+We compare logistic regression, random forest, ExtraTrees, and CatBoost using 5-fold stratified cross-validation. CatBoost gives the best mean performance with accuracy $0.9688 \pm 0.0140$, balanced accuracy $0.9627 \pm 0.0151$, and macro-F1 $0.9637 \pm 0.0138$. The results are strong, but they should be interpreted as record-wise performance inside this dataset, not as proof of subject-wise clinical generalization.
+\end{abstract}
+
+\textbf{Keywords:} Parkinson's disease, hand landmarks, tremor assessment, feature engineering, CatBoost, cross-validation.
+
+\section{Introduction}
+
+Parkinson's disease (PD) is a progressive neurological disorder that affects movement and many non-motor functions. In practice, motor assessment still depends strongly on structured clinical observation and rating scales such as the MDS-UPDRS \citep{goetz2008}. This works well clinically, but it is still partly subjective and limited to the examination window. Because of this, many recent studies have tried to use sensor data, wearable devices, or motion recordings to build more objective tools \citep{channa2022,paucar2025}.
+
+In this project, we do not try to diagnose PD from healthy controls. Instead, the task is to classify which hand assessment exercise is being performed in each recording. The five classes are postural tremor, kinetic tremor, fist, finger tapping, and pronation and supination of the hand.
+
+Our main goal is not only to obtain a high score, but also to understand what the model is learning. In a medical machine learning setting, this is important. A strong result is useful only if we can explain whether it comes from real motion patterns, protocol cues, metadata, or a mix of all three.
+
+\section{Clinical Background and Related Work}
+\subsection{Parkinson's disease and motor assessment}
+PD commonly includes tremor, bradykinesia, rigidity, and postural or gait problems. Tremor is one of the most visible symptoms. Classical Parkinsonian tremor is often described around 4--6 Hz, but real patients can show more varied movement patterns depending on task and state \citep{shahed2007,saifee2019}.
+
+During examination, clinicians use structured tasks because different tasks reveal different motor deficits. Finger tapping reflects rhythm and amplitude decrement. Hand opening and closing reflects repetitive motor control. Pronation-supination focuses more on rotational control. This clinical meaning is important because it guides the feature design.
+
+\subsection{Meaning of the five target classes}
+\textbf{Postural tremor} mainly reflects maintaining a pose against gravity. \textbf{Kinetic tremor} reflects tremor during voluntary motion. \textbf{Fist} is a repeated global opening-closing movement. \textbf{Finger tapping} is a local rhythmic thumb-index movement. \textbf{Pronation and supination of the hand} is mainly a rotation task.
+
+These classes are not arbitrary labels. They represent different movement conditions, so one feature family is unlikely to be enough for all of them.
+
+\subsection{Related work}
+Recent PD tremor studies often combine time-domain and frequency-domain features with classical models or deep learning \citep{channa2022,paucar2025}. High accuracy alone can be misleading, especially when classes are imbalanced or when validation is not patient-wise.
+
+Our work is closer to structured tabular classification than to end-to-end deep learning. We focus on data quality, clinically meaningful feature engineering, and model comparison on a medium-sized dataset.
+
+\section{Dataset and Problem Definition}
+The data come from the Kaggle \emph{Parkinson's Tremor Classification Dataset} \citep{kagglepd}. The training split contains 833 labeled recordings and the test split contains 357 unlabeled recordings. Each row in the metadata table corresponds to one full raw CSV recording.
+
+Each raw file has 21 hand landmarks, each with $x$, $y$, and $z$ coordinates, plus a \texttt{TIME} column. Therefore, each recording is a multivariate sequence with 64 columns in total.
+
+The target distribution is moderately imbalanced. The smallest class is pronation and supination of the hand with only 61 recordings. Because of that, we do not rely on accuracy alone.
+
+\begin{table}[H]
+\centering
+\caption{Target distribution in the training set.}
+\label{tab:class-dist-short}
+\begin{tabular}{lrr}
+\toprule
+Class & Count & Percent (\%) \\
+\midrule
+Postural tremor & 215 & 25.81 \\
+Fist & 199 & 23.89 \\
+Finger tapping & 196 & 23.53 \\
+Kinetic tremor & 162 & 19.45 \\
+Pronation/ supination & 61 & 7.32 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Exploratory Data Analysis}
+\subsection{Metadata quality}
+At table level, the dataset is well organized: no duplicate filenames, no overlap between train and test filenames, and no missing cells in \texttt{train.csv} or \texttt{test.csv}. However, this does not mean the data are semantically clean.
+
+We found 18 rows with gender value \texttt{0}, which behaves like an unknown category. We also found 18 rows with age equal to 0, which is unlikely to be a real age in this setting. We therefore treated age 0 as missing age and created an \texttt{age\_missing} flag.
+
+A second unusual point is the large subgroup with age 23. This value appears 163 times, which is much higher than nearby ages. It may reflect a cohort effect or a privacy placeholder. We keep it in the data, but we mention it because the model could use it as a shortcut.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\columnwidth]{metadata_overview.png}
+    \caption{Metadata overview. The target class distribution is imbalanced, age has unusual values, and metadata are not completely neutral.}
+    \label{fig:metadata-overview-short}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\columnwidth]{age_by_target_class.png}
+    \caption{Age by class. The classes overlap, but age 0 and the age-23 spike justify cleaning.}
+    \label{fig:age-by-class-short}
+\end{figure}
+
+Age statistics are also not fully regular. The mean age is 56.65 years, the median is 65 years, and the range is 0--84 years. The value 23 appears 163 times. Most of the remaining ages are concentrated around 60--70 years.
+
+\begin{table}[H]
+	\small
+	\centering
+	\setlength{\tabcolsep}{3pt}
+	\begin{tabular}{lrr}
+		\toprule
+		\textbf{Motor Task} & \textbf{Median (y)} & \textbf{Mean $\pm$ Std (y)} \\
+		\midrule
+		Finger tapping & 41 & 48.8 $\pm$ 20.5 \\
+		Kinetic tremor & 65 & 61.6 $\pm$ 18.3 \\
+		Postural tremor & 68 & 63.8 $\pm$ 17.8 \\
+		Fist & 68 & 62.4 $\pm$ 18.0 \\
+		Pronation/Supination & 65 & 61.6 $\pm$ 16.4 \\
+		\bottomrule
+	\end{tabular}
+	\caption{Age by class. Finger tapping is clearly younger on average.}
+\end{table}
+
+\begin{table}[H]
+	\small
+	\centering
+	\setlength{\tabcolsep}{3pt}
+	\begin{tabular}{lrr}
+		\toprule
+		\textbf{Score} & \textbf{Count} & \textbf{\%} \\
+		\midrule
+		0 (no symptoms) & 198 & 23.8\% \\
+		1 (mild) & 197 & 23.6\% \\
+		2 (mild-moderate) & 214 & 25.7\% \\
+		3 (moderate) & 178 & 21.4\% \\
+		4 (severe) & 46 & 5.5\% \\
+		\bottomrule
+	\end{tabular}
+	\caption{Physician severity distribution. The dataset description says 0--5, but the observed values are 0--4.}
+\end{table}
+
+Although the dataset description says that the physician severity score ranges from 0 to 5, the actual data only contain values from 0 to 4. In this dataset, 0 means no symptoms and 4 means severe symptoms. This score also changes by class. Kinetic tremor contains more low-score cases, while pronation-supination contains more high-score cases. This means \texttt{doctor\_diagnosis\_0\_5} is an auxiliary predictor and should be described that way.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\columnwidth]{doctor_diagnosis_distribution.png}
+    \caption{Distribution of the physician severity score. This variable is informative and therefore useful as auxiliary metadata.}
+    \label{fig:diag-dist-short}
+\end{figure}
+
+\subsection{Raw file quality}
+The raw files are consistent in structure. All indexed files share one schema, all have 64 columns, and none contains missing numeric values. This is a major practical advantage.
+
+However, the main raw-data problem is time quality. We found 43 files with non-increasing \texttt{TIME}. In some recordings, time jumps backward by a large amount. This is a serious issue for any feature based directly on $\Delta t$.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\columnwidth]{bad_time_trajectory_example.png}
+    \caption{Example of a bad timestamp trajectory. Raw time is not always reliable.}
+    \label{fig:bad-time-trajectory-short}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\columnwidth]{bad_time_differences_example.png}
+    \caption{Frame-to-frame $\Delta t$ for a bad file. Naive derivative-based features would be unsafe on such sequences.}
+    \label{fig:bad-time-diff-short}
+\end{figure}
+
+We also found that recording length and duration differ by class. Kinetic tremor tends to be shorter, while postural tremor and pronation-supination tend to be longer. This matters because the model may partly learn protocol structure, not only hand motion.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\columnwidth]{recording_length_duration_fps_histograms.png}
+    \caption{Global distributions of frame count, duration, and estimated FPS. These temporal properties are not constant across recordings.}
+    \label{fig:length-duration-fps-short}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\columnwidth]{recording_length_by_class.png}
+    \caption{Frame count by class. Length itself contains useful task information.}
+    \label{fig:length-by-class-short}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\columnwidth]{duration_by_class.png}
+    \caption{Duration by class. The classes are not temporally identical.}
+    \label{fig:duration-by-class-short}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\columnwidth]{fps_by_class.png}
+    \caption{Estimated FPS by class. Time resolution also varies across recordings.}
+    \label{fig:fps-by-class-short}
+\end{figure}
+
+\subsection{Anatomical meaning of the raw sequences}
+The most encouraging EDA result is that the landmark recordings are anatomically meaningful. The hand skeletons look interpretable, and the derived distance curves show class-specific behavior.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\columnwidth]{hand_skeleton_examples_by_class.png}
+    \caption{One example hand skeleton from each class. The landmarks form realistic hand shapes rather than random coordinates.}
+    \label{fig:skeletons-short}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\columnwidth]{distance_signals_by_class.png}
+    \caption{Two clinically meaningful distance signals. Finger tapping shows strong periodic thumb-index motion, postural tremor is more stable, and fist shows more global opening-closing behavior.}
+    \label{fig:distance-signals-short}
+\end{figure}
+
+The feature-grid plots confirm this. Thumb-index distance is highly informative for finger tapping. Mean fingertip-wrist distance is useful for fist and hand opening. Palm orientation helps for pronation-supination.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\columnwidth]{thumb_index_tip_distance_grid.png}
+    \caption{Thumb-index tip distance across examples. Finger tapping usually shows the clearest periodic oscillation.}
+    \label{fig:thumb-index-grid-short}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\columnwidth]{mean_fingertip_wrist_distance_grid.png}
+    \caption{Mean fingertip-wrist distance across examples. This feature captures global hand opening and closing.}
+    \label{fig:mean-fw-grid-short}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\columnwidth]{hand_opening_ratio_grid.png}
+    \caption{Hand opening ratio normalized by palm width. This reduces hand-size effects.}
+    \label{fig:opening-ratio-grid-short}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\columnwidth]{motion_energy_grid.png}
+    \caption{Motion energy across examples. It summarizes how much the hand changes frame to frame.}
+    \label{fig:motion-energy-grid-short}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\columnwidth]{palm_orientation_proxy_grid.png}
+    \caption{Palm orientation proxy. This is especially relevant for pronation-supination because that class is mainly rotational.}
+    \label{fig:palm-orientation-grid-short}
+\end{figure}
+
+\section{Methods}
+\subsection{Overview}
+Our pipeline has four main parts: metadata cleaning, timestamp QC and segmentation, geometric normalization, and file-level feature extraction. After that, we compare several supervised classifiers.
+
+\subsection{Metadata cleaning}
+We replaced gender value \texttt{0} with \texttt{Unknown}. We treated age 0 as missing age and added a binary feature \texttt{age\_missing}. We kept \texttt{patient\_off\_on} and \texttt{doctor\_diagnosis\_0\_5} because both are allowed metadata and the EDA showed that they are informative.
+
+\subsection{Timestamp cleaning and segmentation}
+Let the raw timestamps be $t_1,\dots,t_T$. We compute frame-to-frame differences
+\begin{equation}
+\Delta t_i = t_{i+1} - t_i.
+\end{equation}
+
+We split the sequence whenever either of these happens:
+\begin{equation}
+\Delta t_i \le 0,
+\end{equation}
+or
+\begin{equation}
+\Delta t_i > \max(0.50, 8\widetilde{\Delta t}_{+}),
+\end{equation}
+where $\widetilde{\Delta t}_{+}$ is the median positive time step in the file.
+
+This gives continuous segments. Segments shorter than 20 frames are discarded. Inside each valid segment, we rebuild a local time axis using the median positive step. This is safer than trusting the broken global clock.
+
+\subsection{Geometry normalization}
+We first center all landmarks at the wrist:
+\begin{equation}
+\tilde{\mathbf{p}}_{t,\ell} = \mathbf{p}_{t,\ell} - \mathbf{p}_{t,\text{wrist}}.
+\end{equation}
+This removes global translation.
+
+We then normalize by palm size:
+\begin{equation}
+ s_t = \frac{\|\tilde{\mathbf{p}}_{t,\text{index MCP}}\|_2 + \|\tilde{\mathbf{p}}_{t,\text{pinky MCP}}\|_2}{2},
+\end{equation}
+\begin{equation}
+\mathbf{q}_{t,\ell} = \frac{\tilde{\mathbf{p}}_{t,\ell}}{s_t}.
+\end{equation}
+This reduces the effect of hand size and camera scale.
+
+\subsection{Feature extraction}
+We build the final recording-level representation in several layers. The raw hand landmarks are first converted into a small set of clinically meaningful one-dimensional signals. Those signals are then summarized with statistical, spectral, and rhythm descriptors. The summaries are computed segment by segment, because the raw files are first split at timestamp resets and large gaps. Finally, segment-level outputs are aggregated into one file-level vector, and metadata are appended at the end.
+
+The final training matrix $X$ contains 239 features after removing the identifier columns \texttt{data\_file\_name} and \texttt{folder\_path}. The total can be written as
+\begin{equation}
+239 = 219 + 14 + 1 + 5,
+\end{equation}
+where 219 features come from motion-derived segment summaries, 14 come from timestamp and QC information, 1 is the extraction-failure flag, and 5 come from metadata.
+
+\begin{table}[H]
+\centering
+\caption{High-level breakdown of the 239 training features.}
+\label{tab:feature-breakdown-main}
+\begin{tabular}{lr}
+\toprule
+Feature block & Count \\
+\midrule
+Motion-derived segment features & 219 \\
+Timestamp / QC features & 14 \\
+Extraction-failure flag & 1 \\
+Metadata features & 5 \\
+\midrule
+Total & 239 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The motion block itself has three parts. First, we define 12 engineered motion signals from the normalized landmarks. Second, for each signal we compute 16 summary descriptors, which gives $12 \times 16 = 192$ features. Third, for 3 selected rhythmic signals we also compute 8 cycle features each, which adds $3 \times 8 = 24$ features. We then append 3 segment descriptors, namely \texttt{segment\_n\_rows}, \texttt{segment\_duration}, and \texttt{segment\_dt}. This gives
+\begin{equation}
+192 + 24 + 3 = 219.
+\end{equation}
+
+The feature design follows the clinical meaning of the five tasks. Finger tapping is a local thumb-index movement, so it should be captured by local tip distance and local rhythm. Fist is a larger opening-closing action, so it should be captured by global hand-opening signals. Pronation and supination are rotational tasks, so palm orientation and palm rotation speed are important. Tremor-related classes also require features that capture frequency concentration, irregularity, and oscillation strength. In other words, the feature set was not chosen as a random bag of generic statistics. It was designed so that each feature family corresponds to a plausible movement property.
+
+We denote the wrist-centered and palm-size-normalized landmark coordinates by $\mathbf{q}_{\ell}(t) \in \mathbb{R}^3$, where $\ell$ indexes one of the 21 landmarks and $t$ indexes time. All motion signals are computed from these normalized coordinates.
+
+\paragraph{Engineered motion signals.}
+The first signal is the thumb-index distance,
+\begin{equation}
+\texttt{thumb\_index\_dist}(t)=\left\|\mathbf{q}_{\mathrm{THUMB\_TIP}}(t)-\mathbf{q}_{\mathrm{INDEX\_FINGER\_TIP}}(t)\right\|_2.
+\end{equation}
+This is one of the most direct features for finger tapping because that exercise is defined by repetitive local opening and closing between the thumb and the index finger.
+
+The second signal is the mean fingertip-wrist distance,
+\begin{equation}
+\texttt{mean\_fingertip\_wrist}(t)=\frac{1}{5}\sum_{f \in \mathcal{F}_{\mathrm{tips}}} \|\mathbf{q}_{f}(t)\|_2,
+\end{equation}
+where $\mathcal{F}_{\mathrm{tips}}$ is the set of the five fingertip landmarks. Because the coordinates are wrist-centered, this signal measures how open or closed the hand is overall.
+
+The third signal is fingertip spread,
+\begin{equation}
+\texttt{fingertip\_spread}(t)=\frac{1}{4}\sum_{(a,b)\in \mathcal{P}_{\mathrm{adj}}} \left\|\mathbf{q}_{a}(t)-\mathbf{q}_{b}(t)\right\|_2,
+\end{equation}
+where $\mathcal{P}_{\mathrm{adj}}$ contains the four adjacent fingertip pairs: thumb-index, index-middle, middle-ring, and ring-pinky. This captures how spread or compressed the fingers are.
+
+The fourth and fifth signals are local flexion-extension distances for the index and middle fingers,
+\begin{equation}
+\texttt{index\_tip\_mcp\_dist}(t)=\left\|\mathbf{q}_{\mathrm{INDEX\_FINGER\_TIP}}(t)-\mathbf{q}_{\mathrm{INDEX\_FINGER\_MCP}}(t)\right\|_2,
+\end{equation}
+\begin{equation}
+\texttt{middle\_tip\_mcp\_dist}(t)=\left\|\mathbf{q}_{\mathrm{MIDDLE\_FINGER\_TIP}}(t)-\mathbf{q}_{\mathrm{MIDDLE\_FINGER\_MCP}}(t)\right\|_2.
+\end{equation}
+These describe bending or extension for two important fingers.
+
+The next three signals are the components of a palm normal vector. Let
+\begin{equation}
+\mathbf{v}_1(t)=\mathbf{q}_{\mathrm{INDEX\_FINGER\_MCP}}(t),
+\qquad
+\mathbf{v}_2(t)=\mathbf{q}_{\mathrm{PINKY\_MCP}}(t).
+\end{equation}
+Then the palm normal is
+\begin{equation}
+\mathbf{n}(t)=\frac{\mathbf{v}_1(t) \times \mathbf{v}_2(t)}{\|\mathbf{v}_1(t) \times \mathbf{v}_2(t)\|_2},
+\end{equation}
+and the signals \texttt{palm\_nx}, \texttt{palm\_ny}, and \texttt{palm\_nz} are just the three components of $\mathbf{n}(t)$. These features are important because pronation and supination are mainly orientation changes rather than only distance changes.
+
+The ninth signal is palm rotation speed. If $\mathbf{n}(t)$ is the palm normal, we first compute the angle between consecutive normals,
+\begin{equation}
+\theta_t = \arccos\!\left(\mathbf{n}(t-1)^\top \mathbf{n}(t)\right),
+\end{equation}
+and then define
+\begin{equation}
+\texttt{palm\_rot\_speed}(t)=\frac{\theta_t}{dt}.
+\end{equation}
+This is a direct rotational-motion descriptor.
+
+The tenth signal is fingertip motion energy,
+\begin{equation}
+\texttt{tip\_motion\_energy}(t)=\frac{1}{5}\sum_{f \in \mathcal{F}_{\mathrm{tips}}}
+\frac{\|\mathbf{q}_f(t)-\mathbf{q}_f(t-1)\|_2}{dt}.
+\end{equation}
+This summarizes fine finger activity from one frame to the next.
+
+The eleventh signal is whole-hand motion energy,
+\begin{equation}
+\texttt{pose\_motion\_energy}(t)=\frac{1}{21}\sum_{\ell=1}^{21}
+\frac{\|\mathbf{q}_{\ell}(t)-\mathbf{q}_{\ell}(t-1)\|_2}{dt}.
+\end{equation}
+This measures overall hand movement intensity.
+
+The twelfth signal is the thumb-index angle, this complements the thumb-index distance by describing hand shape in angular form rather than only Euclidean length.
+
+\begin{table*}[t]
+\centering
+\caption{The 12 engineered motion signals and their clinical role.}
+\label{tab:signals-short}
+\begin{tabular}{p{3.2cm}p{5.9cm}p{6.0cm}}
+\toprule
+Signal & Mathematical meaning & Clinical interpretation \\
+\midrule
+\texttt{thumb\_index\_dist} & Distance between thumb tip and index tip & Strong local marker for finger tapping \\
+\texttt{mean\_fingertip\_wrist} & Mean distance from fingertips to wrist-centered origin & Global hand opening / closing \\
+\texttt{fingertip\_spread} & Mean distance between adjacent fingertip pairs & Finger spread versus compression \\
+\texttt{index\_tip\_mcp\_dist} & Distance from index tip to index MCP & Index flexion / extension \\
+\texttt{middle\_tip\_mcp\_dist} & Distance from middle tip to middle MCP & Middle-finger flexion / extension \\
+\texttt{palm\_nx}, \texttt{palm\_ny}, \texttt{palm\_nz} & Components of the palm normal vector & 3D orientation of the hand \\
+\texttt{palm\_rot\_speed} & Angular speed of palm normal & Rotational speed for pronation / supination \\
+\texttt{tip\_motion\_energy} & Mean fingertip frame-to-frame speed & Fine finger activity \\
+\texttt{pose\_motion\_energy} & Mean frame-to-frame speed of all landmarks & Overall motion intensity \\
+\texttt{thumb\_index\_angle} & Angle between thumb-tip and index-tip vectors & Angular hand-shape descriptor \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\paragraph{Summary descriptors for each signal.}
+For each one-dimensional signal $x_1,\dots,x_T$, the function \texttt{summarize\_1d\_signal(...)} computes 16 descriptors. The first group describes central level and spread. The mean is
+\begin{equation}
+\texttt{mean}=\frac{1}{T}\sum_{t=1}^{T} x_t,
+\end{equation}
+and the standard deviation is
+\begin{equation}
+\texttt{std}=\sqrt{\frac{1}{T}\sum_{t=1}^{T}(x_t-\bar{x})^2}.
+\end{equation}
+The minimum and maximum capture the extremes of the signal. The median gives a robust central value. The interquartile range is
+\begin{equation}
+\texttt{iqr}=Q_{75}-Q_{25},
+\end{equation}
+which describes the spread of the middle 50\% of the signal and is less sensitive to spikes.
+
+The root-mean-square is
+\begin{equation}
+\texttt{rms}=\sqrt{\frac{1}{T}\sum_{t=1}^{T}x_t^2},
+\end{equation}
+which summarizes overall magnitude. The range is simply $\max(x)-\min(x)$. The mean absolute frame-to-frame difference is
+\begin{equation}
+\texttt{madiff}=\frac{1}{T-1}\sum_{t=2}^{T}|x_t-x_{t-1}|,
+\end{equation}
+which measures local roughness or short-term variability.
+
+To describe simple oscillation, we also compute a zero-crossing rate after median centering. If $z_t=x_t-\mathrm{median}(x)$, then the zero-crossing rate is the proportion of pairs $(z_t,z_{t+1})$ for which $z_t z_{t+1}<0$. This gives a lightweight measure of how often the signal changes sign around its own center.
+
+The spectral features are computed from Welch's power spectral density estimate \citep{welch1967}. The dominant frequency is the frequency with the highest spectral power,
+\begin{equation}
+\texttt{dom\_freq}=\arg\max_{f>0} S(f),
+\end{equation}
+where $S(f)$ is the estimated power spectral density. Spectral entropy is computed from normalized PSD weights $p_k$ as
+\begin{equation}
+\texttt{spec\_entropy}=-\sum_k p_k \log(p_k+\varepsilon),
+\end{equation}
+so a low value means the spectrum is concentrated around a few frequencies, while a high value means the spectrum is more spread out and irregular.
+
+We also compute four band-power features,
+\begin{equation}
+\texttt{bp\_0\_3}=\int_{0}^{3} S(f)\,df,
+\qquad
+\texttt{bp\_3\_6}=\int_{3}^{6} S(f)\,df,
+\end{equation}
+\begin{equation}
+\texttt{bp\_6\_9}=\int_{6}^{9} S(f)\,df,
+\qquad
+\texttt{bp\_9\_12}=\int_{9}^{12} S(f)\,df.
+\end{equation}
+These ranges were chosen because tremor and repetitive hand-task rhythms often appear in low-frequency bands, so keeping separate low-frequency power blocks is more informative than using only one global frequency statistic.
+
+\begin{table}[H]
+\centering
+\caption{Summary and cycle feature counts inside the motion block.}
+\label{tab:summary-cycle-counts}
+\begin{tabular}{lr}
+\toprule
+Motion-derived component & Count \\
+\midrule
+12 signals $\times$ 16 summaries & 192 \\
+3 rhythmic signals $\times$ 8 cycle features & 24 \\
+Segment descriptors & 3 \\
+\midrule
+Total motion-derived features & 219 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Cycle features for rhythmic signals.}
+Cycle descriptors are only computed for \texttt{thumb\_index\_dist}, \texttt{fingertip\_spread}, and \texttt{palm\_rot\_speed}. These are the signals where repetitive rhythmic structure is most clinically meaningful. After Savitzky--Golay smoothing \citep{savitzky1964}, we detect peaks and derive 8 cycle features: the number of peaks, the mean and standard deviation of cycle duration, the linear slope of cycle duration across time, the mean and standard deviation of cycle amplitude, the linear slope of cycle amplitude, and the number of interruptions.
+
+If the detected peak indices are $p_1,p_2,\dots$, then the cycle durations are
+\begin{equation}
+d_i=(p_{i+1}-p_i)\,dt,
+\end{equation}
+and the mean cycle duration is the average of these $d_i$ values. The standard deviation of cycle duration measures rhythm irregularity. A positive cycle-duration slope means the movement is slowing down, while a negative slope means it is speeding up. Cycle amplitude is estimated from peak-trough differences. The amplitude slope is useful for amplitude decrement or fatigue-like behavior across time. The interruption count is the number of cycles whose duration is greater than twice the median cycle duration. In simple terms, this counts pauses, hesitations, or broken rhythm.
+
+\paragraph{Segment descriptors, QC block, and metadata block.}
+Three additional descriptors are appended inside \texttt{extract\_segment\_features(...)}. These are \texttt{segment\_n\_rows}, the number of frames in the segment, \texttt{segment\_duration}, which is the local segment duration, and \texttt{segment\_dt}, which is the median local frame-to-frame step. They capture how long the usable segment is and at what effective time resolution it is recorded.
+
+The timestamp-QC block keeps track of the raw file before final aggregation. The 14 QC features are \texttt{raw\_n\_rows}, \texttt{has\_time}, \texttt{has\_reset}, \texttt{has\_large\_gap}, \texttt{n\_negative\_dt}, \texttt{n\_large\_gaps}, \texttt{median\_dt\_raw}, \texttt{gap\_threshold}, \texttt{n\_segments\_total}, \texttt{n\_segments\_kept}, \texttt{largest\_segment\_frac}, \texttt{raw\_time\_start}, \texttt{raw\_time\_end}, and \texttt{raw\_duration}. These features matter because time quality is itself informative. Instead of hiding resets and gaps, the pipeline keeps a structured record of them.
+
+The extraction-failure flag \texttt{feature\_extraction\_failed} is set to 1 only when no valid segment features can be produced. In our run, all values were 0, but the flag is still useful for robustness and reproducibility. The metadata block contains \texttt{gender}, \texttt{age}, \texttt{age\_missing}, \texttt{patient\_off\_on}, and \texttt{doctor\_diagnosis\_0\_5}. These are not motion features, but they provide patient context and clearly improve prediction. This is why the final system should be described honestly as a motion-plus-context classifier.
+
+Features are first extracted for each valid segment and then aggregated into one recording-level vector using segment-length weights. This weighted aggregation is important because long continuous segments usually contain more reliable movement evidence than very short segments. As a result, the final 239-dimensional representation combines local biomechanics, temporal rhythm, spectral structure, data-quality information, and patient metadata in one table that is still suitable for classical machine-learning models.
+
+\section{Baselines, Models, and Evaluation}
+\subsection{Baselines}
+Before training the final models, we built two simple baselines.
+
+The \textbf{metadata-only baseline} used gender, age, age-missing, stimulation state, and doctor severity score. It beat the dummy classifier but remained far from the final model. This shows that metadata matter, but they are not enough.
+
+The \textbf{length-only baseline} used number of rows, duration, and estimated FPS. It also beat the dummy classifier. This confirms that protocol cues are informative.
+
+\begin{table}[H]
+	\centering
+	\caption{Diagnostic baselines (5-fold stratified CV).}
+	\label{tab:baselines-short}
+	\begin{tabular}{p{4cm}cc}
+		\toprule
+		Model setting & Accuracy & Macro-F1 \\
+		\midrule
+		Metadata only\\(best: LogReg) & 0.324 & 0.261 \\
+		Length only\\(best: RF for macro-F1) & 0.325 & 0.289 \\
+		Dummy & 0.258 & 0.082 \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+\subsection{Final models}
+We compared logistic regression, random forest, ExtraTrees, and CatBoost. Logistic regression is a strong linear baseline. Random forest and ExtraTrees capture non-linear interactions. CatBoost is a boosting model that usually performs well on mixed tabular data \citep{prokhorenkova2018}.
+
+For preprocessing, numeric columns used median imputation. Categorical columns used most-frequent imputation and one-hot encoding. Logistic regression also used feature scaling.
+
+\subsection{Evaluation protocol}
+We used 5-fold stratified cross-validation. In this study, a \textbf{sample} is one full recording after feature extraction, a \textbf{fold} is one split of the recording-level table, \textbf{stratified} means each fold keeps similar class proportions, and \textbf{record-wise} means the split is by recording rows, not by patient identity.
+
+This last point is important. Our validation is not subject-wise, so the final scores may be optimistic compared with a stricter patient-level evaluation.
+
+Because the classes are imbalanced, we report accuracy, balanced accuracy, macro-F1, and weighted F1. Macro-F1 is especially important because it gives equal importance to each class.
+
+\section{Results}
+\subsection{Model comparison}
+The final model comparison is shown in Table~\ref{tab:final-models-short} and Figure~\ref{fig:model-cv-short}. CatBoost performs best overall, but logistic regression is very close. This suggests that the engineered features are already highly informative.
+
+\begin{table*}[t]
+\centering
+\caption{Cross-validation results of the final motion-plus-metadata models.}
+\label{tab:final-models-short}
+\begin{tabular}{lcccc}
+\toprule
+Model & Accuracy & Balanced Accuracy & Macro-F1 & Weighted F1 \\
+\midrule
+CatBoost & $0.9688 \pm 0.0140$ & $0.9627 \pm 0.0151$ & $0.9637 \pm 0.0138$ & $0.9688 \pm 0.0138$ \\
+Logistic Regression & $0.9664 \pm 0.0048$ & $0.9624 \pm 0.0119$ & $0.9609 \pm 0.0078$ & $0.9664 \pm 0.0048$ \\
+ExtraTrees & $0.9616 \pm 0.0145$ & $0.9434 \pm 0.0187$ & $0.9495 \pm 0.0191$ & $0.9612 \pm 0.0146$ \\
+Random Forest & $0.9508 \pm 0.0214$ & $0.9248 \pm 0.0270$ & $0.9352 \pm 0.0270$ & $0.9499 \pm 0.0216$ \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\columnwidth]{model_cv_mean_std.png}
+    \caption{Cross-validation mean $\pm$ standard deviation for the main metrics. CatBoost is the best overall model, but the small gap to logistic regression shows that the feature engineering was already very effective.}
+    \label{fig:model-cv-short}
+\end{figure}
+
+\subsection{Per-class performance of the best model}
+Out-of-fold predictions from CatBoost gave the following overall results: accuracy 0.9688, balanced accuracy 0.9626, macro-F1 0.9637, and weighted F1 0.9687.
+
+\begin{table*}[t]
+\centering
+\caption{Per-class out-of-fold performance of the final CatBoost model.}
+\label{tab:per-class-short}
+\begin{tabular}{lrrrr}
+\toprule
+Class & Precision & Recall & F1-score & Support \\
+\midrule
+Finger tapping & 0.9588 & 0.9490 & 0.9538 & 196 \\
+Fist & 0.9697 & 0.9648 & 0.9673 & 199 \\
+Kinetic tremor & 0.9529 & 1.0000 & 0.9759 & 162 \\
+Postural tremor & 0.9953 & 0.9814 & 0.9883 & 215 \\
+Pronation and supination of the hand & 0.9492 & 0.9180 & 0.9333 & 61 \\
+\midrule
+Macro average & 0.9652 & 0.9626 & 0.9637 & 833 \\
+Weighted average & 0.9690 & 0.9688 & 0.9687 & 833 \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+The most difficult class is pronation and supination of the hand. The main confusion is with kinetic tremor. This is clinically reasonable because both involve active motion, while pronation-supination needs rotational information to be separated well.
+
+\section{Discussion}
+The final performance is strong, but the result should be interpreted carefully.
+
+First, the model works well because the feature design matches the movement tasks. Thumb-index distance helps finger tapping. Hand opening helps fist. Palm orientation helps pronation-supination. Motion-energy and spectral features help tremor-related variability.
+
+Second, the timestamp cleaning strategy was necessary. Without segmentation, bad timestamps could corrupt time-based features and make the summary statistics misleading.
+
+Third, metadata and protocol cues clearly contribute. The metadata-only and length-only baselines show this directly. Therefore, our final system should be described as a motion-plus-context classifier, not a pure motion-only biomarker.
+
+Fourth, CatBoost performed best because the data are tabular, mixed, and non-linear. At the same time, the fact that logistic regression is close means that good feature design mattered more than model complexity.
+
+The expanded feature breakdown also helps explain why the model works. The 239-dimensional representation is not a random collection of statistics. It is a layered summary of local hand geometry, temporal rhythm, spectral content, segment quality, and patient context. In other words, the model sees the recording at several levels at once. This is one reason why a relatively simple tabular model can still perform very strongly on this task.
+
+\subsection{Limitations}
+This work has four main limitations. First, validation is record-wise, not subject-wise. Second, there is no external validation. Third, metadata and protocol cues are informative, so the model is not purely motion-based. Fourth, the task is exercise classification, not full diagnosis or severity prediction.
+
+These points do not invalidate the study, but they define what the reported score really means.
+
+\subsection{Future work}
+A natural next step is a sequence model trained directly on landmark trajectories. A transformer encoder could be a good option because it can model long-range temporal relations and joint interactions. However, for this dataset size, a transformer is not automatically better. The current study shows that a carefully engineered tabular representation is already very strong.
+
+The most important future improvements are stricter subject-wise validation, external validation, and side-by-side comparison of motion-only versus motion-plus-metadata models. Another useful extension would be a structured feature-ablation study to quantify how much each block contributes, for example motion-only, motion plus QC, and motion plus metadata.
+
+\section{Conclusion}
+This project built a multiclass classifier for Parkinsonian hand assessment exercises using raw hand landmarks and metadata. The main technical result is that CatBoost achieved strong record-wise performance, with macro-F1 0.9637 and balanced accuracy 0.9627.
+
+The more important scientific result is methodological. We showed that the dataset is not perfectly clean, especially in timestamps and placeholder-like metadata. We then designed preprocessing and features that follow the biomechanics of the hand tasks instead of relying only on generic statistics. This combination of careful EDA, medically sensible feature design, and a strong tabular model explains the final performance.
+
+At the same time, we also show why high score alone is not enough in machine learning in medicine. The current results are strong within this dataset, but stronger clinical claims need subject-wise and external validation.
+
+\appendix
+
+\section{Useful Short Notes for Defense}
+\textbf{QC} means quality control. In our notebook, it mainly refers to checks on timestamp validity, gaps, resets, and segment quality.
+
+\textbf{CV} means cross-validation. In 5-fold CV, the dataset is divided into five parts. Each part is used once as validation and four times as training.
+
+A \textbf{sample} in this project is one whole recording after feature extraction, not one frame.
+
+A \textbf{fitted model} is the final trained classifier after calling \texttt{fit(X, y)} on the full training feature table. This is different from the temporary model copies used inside cross-validation.
+
+\textbf{Feature tables} are the saved outputs after preprocessing and feature extraction, such as \texttt{train\_features\_v2.csv} and \texttt{test\_features\_v2.csv}. They are useful because feature extraction from raw files takes time.
+
+\section{Detailed Feature Engineering Breakdown}
+This appendix gives the full detailed view of the 239-feature representation used for training. The point of including it here is not only to show the final count, but also to make clear that the features were built in a structured way. They can be grouped into motion summaries, cycle descriptors, segment descriptors, QC features, a failure flag, and metadata.
+
+The final training matrix contains 239 columns after removing \texttt{data\_file\_name} and \texttt{folder\_path}. The full count is
+\begin{equation}
+239 = 219 + 14 + 1 + 5.
+\end{equation}
+The motion-derived block is itself
+\begin{equation}
+219 = 12 \times 16 + 3 \times 8 + 3.
+\end{equation}
+This means 12 engineered signals, 16 summaries for each signal, 8 cycle features for 3 selected rhythmic signals, and 3 extra segment descriptors.
+
+\begin{table}[H]
+\centering
+\caption{Compact full breakdown of the 239-feature representation.}
+\label{tab:slide-summary}
+\begin{tabular}{p{5.4cm}r}
+\toprule
+Component & Count \\
+\midrule
+12 motion signals $\times$ 16 summary statistics & 192 \\
+3 rhythmic signals $\times$ 8 cycle features & 24 \\
+Segment descriptors & 3 \\
+Timestamp / QC features & 14 \\
+Failure flag & 1 \\
+Metadata features & 5 \\
+\midrule
+Total & 239 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{The 12 motion signals}
+The 12 motion signals are \texttt{thumb\_index\_dist}, \texttt{mean\_fingertip\_wrist}, \texttt{fingertip\_spread}, \texttt{index\_tip\_mcp\_dist}, \texttt{middle\_tip\_mcp\_dist}, \texttt{palm\_nx}, \texttt{palm\_ny}, \texttt{palm\_nz}, \texttt{palm\_rot\_speed}, \texttt{tip\_motion\_energy}, \texttt{pose\_motion\_energy}, and \texttt{thumb\_index\_angle}.
+
+The thumb-index distance is the Euclidean distance between thumb tip and index tip. It is one of the strongest features for finger tapping because that exercise is defined by repeated thumb-index contact and separation. The mean fingertip-wrist distance is the average distance from the five fingertips to the wrist-centered origin, so it measures global hand opening and closing. Fingertip spread is the average distance between adjacent fingertip pairs and therefore describes whether the fingers are tightly closed or widely spread.
+
+The index-tip-to-MCP and middle-tip-to-MCP distances are local finger-extension measures. They help describe finger flexion and extension independently of whole-hand movement. The three palm-normal components describe the 3D orientation of the hand. These are particularly useful for pronation and supination because that task is dominated by orientation change rather than only by distance change. Palm rotation speed takes this one step further by measuring the speed of change in palm orientation from one frame to the next.
+
+Tip motion energy and pose motion energy summarize frame-to-frame motion. The first focuses on the fingertips and therefore emphasizes fine finger activity. The second averages over all 21 landmarks and therefore emphasizes overall hand motion intensity. The thumb-index angle adds a shape-based angular description that complements the thumb-index distance. Two recordings can have similar distances but slightly different geometric orientation, so this angle can contain information not captured by distance alone.
+
+\subsection{The 16 summary features for each signal}
+For each one-dimensional signal, the pipeline computes 16 summary features: \texttt{mean}, \texttt{std}, \texttt{min}, \texttt{max}, \texttt{median}, \texttt{iqr}, \texttt{rms}, \texttt{range}, \texttt{madiff}, \texttt{zcr}, \texttt{dom\_freq}, \texttt{spec\_entropy}, \texttt{bp\_0\_3}, \texttt{bp\_3\_6}, \texttt{bp\_6\_9}, and \texttt{bp\_9\_12}.
+
+The first eight statistics summarize level and spread. Mean, median, minimum, maximum, and range describe the global level of the signal. Standard deviation and interquartile range describe variability. Root-mean-square describes the magnitude of the signal. These features are useful because many classes differ not only in rhythm, but also in how open the hand is on average or how large the movement amplitude is.
+
+The next two summaries, \texttt{madiff} and \texttt{zcr}, describe local oscillation. Mean absolute difference is a simple measure of roughness, and zero-crossing rate measures how often the median-centered signal changes sign. They help distinguish smoother trajectories from more rapidly oscillating ones.
+
+The last six summaries are spectral. Dominant frequency extracts the strongest oscillation frequency from the Welch PSD. Spectral entropy measures whether the frequency content is concentrated or dispersed. The four band-power features keep separate power in 0--3, 3--6, 6--9, and 9--12 Hz. This is important because repetitive hand tasks and tremor-like motion often live in low-frequency bands, and two signals with similar overall power can still differ strongly in where that power is located.
+
+\subsection{The 8 cycle features for 3 selected signals}
+Cycle features are computed only for \texttt{thumb\_index\_dist}, \texttt{fingertip\_spread}, and \texttt{palm\_rot\_speed}. These are the most rhythmically meaningful signals for the motor tasks in this dataset. After smoothing and peak detection, the pipeline extracts \texttt{n\_peaks}, \texttt{cycle\_dur\_mean}, \texttt{cycle\_dur\_std}, \texttt{cycle\_dur\_slope}, \texttt{cycle\_amp\_mean}, \texttt{cycle\_amp\_std}, \texttt{cycle\_amp\_slope}, and \texttt{interruptions}.
+
+The peak count gives a direct measure of how many cycles were detected. The mean and standard deviation of cycle duration measure the typical rhythm and its irregularity. The slope of cycle duration tells us whether the movement gradually slows down or speeds up. The mean and standard deviation of cycle amplitude describe how large the repetitive motions are and how consistent they remain. The amplitude slope helps detect amplitude decrement. The interruption feature counts unusually long pauses between cycles. In simple terms, this feature family tries to answer not only how often the hand moves, but also whether the rhythm is stable and whether the movement becomes smaller or more interrupted over time.
+
+\subsection{The 3 segment descriptors}
+The three extra segment descriptors are \texttt{segment\_n\_rows}, \texttt{segment\_duration}, and \texttt{segment\_dt}. These features are simple, but they are still useful. The number of rows measures how much usable data remain in the cleaned segment. The segment duration measures how long the local continuous segment lasts. The median local time step measures effective temporal resolution. Because the raw files have timestamp problems, these descriptors help the model keep track of the actual quality and size of the motion evidence used for extraction.
+
+\subsection{The 14 QC features}
+The 14 QC features are \texttt{raw\_n\_rows}, \texttt{has\_time}, \texttt{has\_reset}, \texttt{has\_large\_gap}, \texttt{n\_negative\_dt}, \texttt{n\_large\_gaps}, \texttt{median\_dt\_raw}, \texttt{gap\_threshold}, \texttt{n\_segments\_total}, \texttt{n\_segments\_kept}, \texttt{largest\_segment\_frac}, \texttt{raw\_time\_start}, \texttt{raw\_time\_end}, and \texttt{raw\_duration}.
+
+These features are there because data quality should not be ignored. The raw row count, time span, and raw duration describe the original file size. The reset and large-gap flags record whether the clock goes backward or jumps too much. The counts of negative time differences and large gaps show how often the problem occurs. The raw median time step and the chosen gap threshold describe the file-specific time scale used by the segmentation procedure. The segment-count features describe how fragmented the recording becomes after cleaning. The largest-segment fraction describes how much of the recording remains as one continuous usable piece. Together, these QC variables preserve useful information that would otherwise disappear after preprocessing.
+
+\subsection{The failure flag and metadata block}
+The failure flag is \texttt{feature\_extraction\_failed}. It is set to 1 only if no valid segment feature vector can be produced. In our final run it was always 0, but it remains an important part of a robust pipeline. It makes the feature table safe even if future data contain more problematic files.
+
+The 5 metadata features are \texttt{gender}, \texttt{age}, \texttt{age\_missing}, \texttt{patient\_off\_on}, and \texttt{doctor\_diagnosis\_0\_5}. The first four describe patient context and data completeness. The last one is a physician severity score. These metadata are allowed by the dataset and clearly improve performance, but they also mean the final model is not a pure motion-only system. This distinction is important when interpreting the score.
+
+\subsection{Why this feature design is useful}
+This detailed breakdown shows why the final representation works well. The model is not only given raw movement magnitude. It is given hand geometry, finger coordination, palm orientation, frame-to-frame motion intensity, frequency concentration, rhythmic stability, interruption behavior, segment continuity, raw time quality, and metadata context. In other words, the 239 features summarize the recording at several levels at once. This is why a strong tabular model such as CatBoost can perform so well even without an end-to-end deep sequence encoder.
+
+
+\begin{thebibliography}{99}
+
+\bibitem[Kaggle dataset(2025)]{kagglepd}
+Kaggle dataset. (2025).
+Parkinson's Tremor Classification Dataset.
+Available at: \url{https://www.kaggle.com/datasets/nikee7/parkinsons-tremor-classification-dataset}.
+Accessed March 2026.
+
+\bibitem[Goetz et al.(2008)]{goetz2008}
+Goetz, C. G., Tilley, B. C., Shaftman, S. R., Stebbins, G. T., Fahn, S., Martinez-Martin, P., Poewe, W., Sampaio, C., Stern, M. B., Dodel, R., Dubois, B., Holloway, R., Jankovic, J., Kulisevsky, J., Lang, A. E., Lees, A., Leurgans, S., LeWitt, P. A., Nyenhuis, D., Olanow, C. W., Rascol, O., Schrag, A., Teresi, J. A., Van Hilten, J. J., and LaPelle, N. (2008).
+Movement Disorder Society-sponsored revision of the Unified Parkinson's Disease Rating Scale (MDS-UPDRS): scale presentation and clinimetric testing results.
+\textit{Movement Disorders}, 23(15), 2129--2170.
+
+\bibitem[Shahed and Jankovic(2007)]{shahed2007}
+Shahed, J. and Jankovic, J. (2007).
+Exploring the relationship between essential tremor and Parkinson's disease.
+\textit{Parkinsonism \& Related Disorders}, 13(2), 67--76.
+
+\bibitem[Saifee(2019)]{saifee2019}
+Saifee, T. A. (2019).
+Tremor.
+\textit{British Medical Bulletin}, 130(1), 51--63.
+
+\bibitem[Channa et al.(2022)]{channa2022}
+Channa, A., Cramariuc, O., Memon, M., Popescu, N., Mammone, N., and Ruggeri, G. (2022).
+Parkinson's disease resting tremor severity classification using machine learning with resampling techniques.
+\textit{Frontiers in Neuroscience}, 16, 955464.
+
+\bibitem[Paucar-Escalante et al.(2025)]{paucar2025}
+Paucar-Escalante, J., Alves da Silva, M., De Lima Sanches, B., Soriano-Vargas, A., Silveira Moriyama, L., and Luna Colombini, E. (2025).
+Machine Learning Strategies for Parkinson Tremor Classification Using Wearable Sensor Data.
+\textit{arXiv preprint arXiv:2501.18671}.
+
+\bibitem[Savitzky and Golay(1964)]{savitzky1964}
+Savitzky, A. and Golay, M. J. E. (1964).
+Smoothing and differentiation of data by simplified least squares procedures.
+\textit{Analytical Chemistry}, 36(8), 1627--1639.
+
+\bibitem[Welch(1967)]{welch1967}
+Welch, P. D. (1967).
+The use of fast Fourier transform for the estimation of power spectra: A method based on time averaging over short, modified periodograms.
+\textit{IEEE Transactions on Audio and Electroacoustics}, 15(2), 70--73.
+
+\bibitem[Breiman(2001)]{breiman2001}
+Breiman, L. (2001).
+Random forests.
+\textit{Machine Learning}, 45(1), 5--32.
+
+\bibitem[Geurts et al.(2006)]{geurts2006}
+Geurts, P., Ernst, D., and Wehenkel, L. (2006).
+Extremely randomized trees.
+\textit{Machine Learning}, 63(1), 3--42.
+
+\bibitem[Prokhorenkova et al.(2018)]{prokhorenkova2018}
+Prokhorenkova, L., Gusev, G., Vorobev, A. V., Dorogush, and Gulin, A. (2018).
+CatBoost: unbiased boosting with categorical features.
+In \textit{Advances in Neural Information Processing Systems}, 6638--6648.
+
+\end{thebibliography}
+
+\end{document}
